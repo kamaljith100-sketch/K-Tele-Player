@@ -21,6 +21,9 @@ jobs:
           gradle-version: 8.9
 
       - name: Build debug APK
+        env:
+          TG_API_ID: ${{ secrets.TG_API_ID }}
+          TG_API_HASH: ${{ secrets.TG_API_HASH }}
         run: gradle assembleDebug --stacktrace
 
       - uses: actions/upload-artifact@v4
