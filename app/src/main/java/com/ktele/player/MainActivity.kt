@@ -1,5 +1,6 @@
 package com.ktele.player
 
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -19,22 +20,115 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.datasource.BaseDataSource
+import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.DataSpec
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import androidx.media3.ui.PlayerView
 import org.drinkless.tdlib.Client
 import org.drinkless.tdlib.TdApi
+import java.io.IOException
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 data class VideoItem(
     val messageId: Long,
     val title: String,
     val info: String,
-    val fileId: Int
+    val fileId: Int,
+    val size: Long
 )
+
+class TdFileDataSource(
+    private val fetch: (TdApi.Function<*>) -> TdApi.Object?,
+    private val fileId: Int,
+    private val fileSize: Long
+) : BaseDataSource(true) {
+
+    private var currentUri: Uri? = null
+    private var position = 0L
+    private var windowStart = 0L
+    private var windowEnd = 0L
+    private var isOpen = false
+
+    override fun open(dataSpec: DataSpec): Long {
+        currentUri = dataSpec.uri
+        transferInitializing(dataSpec)
+        position = dataSpec.position
+        windowStart = position
+        windowEnd = position
+        isOpen = true
+        transferStarted(dataSpec)
+        val remaining = maxOf(0L, fileSize - position)
+        return if (dataSpec.length != C.LENGTH_UNSET.toLong()) {
+            minOf(dataSpec.length, remaining)
+        } else {
+            remaining
+        }
+    }
+
+    override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+        if (length == 0) return 0
+        if (position >= fileSize) return C.RESULT_END_OF_INPUT
+
+        val want = minOf(length.toLong(), 262144L, fileSize - position)
+
+        if (position < windowStart || position + want > windowEnd) {
+            val d = TdApi.DownloadFile()
+            d.fileId = fileId
+            d.priority = 32
+            d.offset = position
+            d.limit = 8L * 1024L * 1024L
+            d.synchronous = true
+            val r = fetch(d)
+            if (r == null) throw IOException("Telegram download timeout")
+            if (r is TdApi.Error) throw IOException("Telegram: " + r.message)
+            windowStart = position
+            windowEnd = position + d.limit
+        }
+
+        val rp = TdApi.ReadFilePart()
+        rp.fileId = fileId
+        rp.offset = position
+        rp.count = want
+        val res = fetch(rp)
+        if (res is TdApi.FilePart) {
+            val data = res.data
+            if (data.isEmpty()) throw IOException("Empty data from Telegram")
+            System.arraycopy(data, 0, buffer, offset, data.size)
+            position += data.size
+            bytesTransferred(data.size)
+            return data.size
+        }
+        if (res is TdApi.Error) throw IOException("Telegram: " + res.message)
+        throw IOException("Could not read file")
+    }
+
+    override fun getUri(): Uri? = currentUri
+
+    override fun close() {
+        if (isOpen) {
+            isOpen = false
+            transferEnded()
+        }
+        currentUri = null
+    }
+}
 
 class MainActivity : ComponentActivity() {
 
@@ -45,6 +139,7 @@ class MainActivity : ComponentActivity() {
     private val chatTitles = mutableStateMapOf<Long, String>()
     private var openChatId by mutableStateOf<Long?>(null)
     private var videos by mutableStateOf(listOf<VideoItem>())
+    private var playing by mutableStateOf<VideoItem?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -120,6 +215,17 @@ class MainActivity : ComponentActivity() {
         })
     }
 
+    private fun sendBlocking(f: TdApi.Function<*>): TdApi.Object? {
+        val latch = CountDownLatch(1)
+        val holder = arrayOfNulls<TdApi.Object>(1)
+        client?.send(f, Client.ResultHandler { r ->
+            holder[0] = r
+            latch.countDown()
+        })
+        latch.await(120, TimeUnit.SECONDS)
+        return holder[0]
+    }
+
     private fun loadChats() {
         val load = TdApi.LoadChats()
         load.chatList = TdApi.ChatListMain()
@@ -182,9 +288,10 @@ class MainActivity : ComponentActivity() {
             var title = c.video.fileName ?: ""
             if (title.isBlank()) title = c.caption.text.take(60)
             if (title.isBlank()) title = "Video"
-            val mb = maxOf(f.size, f.expectedSize) / 1048576
+            val bytes = maxOf(f.size, f.expectedSize).toLong()
+            val mb = bytes / 1048576
             val minutes = c.video.duration / 60
-            return VideoItem(m.id, title, "$minutes min  |  $mb MB", f.id)
+            return VideoItem(m.id, title, "$minutes min  |  $mb MB", f.id, bytes)
         }
         if (c is TdApi.MessageDocument) {
             val d = c.document
@@ -199,8 +306,9 @@ class MainActivity : ComponentActivity() {
             var title = name
             if (title.isBlank()) title = c.caption.text.take(60)
             if (title.isBlank()) title = "Video file"
-            val mb = maxOf(f.size, f.expectedSize) / 1048576
-            return VideoItem(m.id, title, "file  |  $mb MB", f.id)
+            val bytes = maxOf(f.size, f.expectedSize).toLong()
+            val mb = bytes / 1048576
+            return VideoItem(m.id, title, "file  |  $mb MB", f.id, bytes)
         }
         return null
     }
@@ -215,6 +323,75 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun Screen() {
+        val p = playing
+        if (p != null) {
+            PlayerScreen(p)
+        } else {
+            ListScreen()
+        }
+    }
+
+    @Composable
+    private fun PlayerScreen(item: VideoItem) {
+        val context = LocalContext.current
+        var error by remember { mutableStateOf("") }
+
+        val player = remember(item.fileId) {
+            val factory = DataSource.Factory {
+                TdFileDataSource({ f -> sendBlocking(f) }, item.fileId, item.size)
+            }
+            val uri = Uri.Builder()
+                .scheme("td")
+                .authority("file")
+                .appendPath(item.fileId.toString())
+                .appendPath(item.title)
+                .build()
+            val source = ProgressiveMediaSource.Factory(factory)
+                .createMediaSource(MediaItem.fromUri(uri))
+            val exo = ExoPlayer.Builder(context).build()
+            exo.addListener(object : Player.Listener {
+                override fun onPlayerError(e: PlaybackException) {
+                    error = "Playback error: " + e.errorCodeName + " - " +
+                        (e.cause?.message ?: e.message ?: "")
+                }
+            })
+            exo.setMediaSource(source)
+            exo.prepare()
+            exo.playWhenReady = true
+            exo
+        }
+
+        DisposableEffect(player) {
+            onDispose { player.release() }
+        }
+
+        BackHandler { playing = null }
+
+        Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+            Button(onClick = { playing = null }) {
+                Text("Back")
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(item.title)
+            Spacer(modifier = Modifier.height(12.dp))
+            AndroidView(
+                factory = { ctx ->
+                    PlayerView(ctx).apply {
+                        this.player = player
+                        keepScreenOn = true
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().height(260.dp)
+            )
+            if (error.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(error)
+            }
+        }
+    }
+
+    @Composable
+    private fun ListScreen() {
         var input by remember { mutableStateOf("") }
 
         BackHandler(enabled = openChatId != null) {
@@ -264,6 +441,7 @@ class MainActivity : ComponentActivity() {
                                 Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
+                                        .clickable { playing = v }
                                         .padding(vertical = 10.dp)
                                 ) {
                                     Text(v.title)
