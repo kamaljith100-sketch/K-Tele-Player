@@ -3,6 +3,9 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val tgApiId = (System.getenv("TG_API_ID") ?: "0").trim()
+val tgApiHash = (System.getenv("TG_API_HASH") ?: "").trim()
+
 android {
     namespace = "com.ktele.player"
     compileSdk = 35
@@ -13,8 +16,12 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
+
+        buildConfigField("int", "TG_API_ID", tgApiId)
+        buildConfigField("String", "TG_API_HASH", "\"$tgApiHash\"")
     }
-compileOptions {
+
+    compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -22,8 +29,10 @@ compileOptions {
     kotlinOptions {
         jvmTarget = "17"
     }
+
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     composeOptions {
@@ -38,4 +47,6 @@ dependencies {
     implementation("androidx.compose.ui:ui:1.7.6")
     implementation("androidx.compose.material3:material3:1.3.1")
     implementation("androidx.compose.ui:ui-tooling-preview:1.7.6")
+
+    implementation("io.github.tdlib-android:core:0.1.1")
 }
