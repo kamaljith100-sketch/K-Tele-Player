@@ -2,7 +2,9 @@ package com.ktele.player
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -27,6 +29,13 @@ import androidx.compose.ui.unit.dp
 import org.drinkless.tdlib.Client
 import org.drinkless.tdlib.TdApi
 
+data class VideoItem(
+    val messageId: Long,
+    val title: String,
+    val info: String,
+    val fileId: Int
+)
+
 class MainActivity : ComponentActivity() {
 
     private var client: Client? = null
@@ -34,6 +43,8 @@ class MainActivity : ComponentActivity() {
     private var message by mutableStateOf("")
     private var chatIds by mutableStateOf(listOf<Long>())
     private val chatTitles = mutableStateMapOf<Long, String>()
+    private var openChatId by mutableStateOf<Long?>(null)
+    private var videos by mutableStateOf(listOf<VideoItem>())
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -138,6 +149,62 @@ class MainActivity : ComponentActivity() {
         })
     }
 
+    private fun openChat(chatId: Long) {
+        openChatId = chatId
+        videos = listOf()
+        message = ""
+        searchInto(chatId, TdApi.SearchMessagesFilterVideo())
+        searchInto(chatId, TdApi.SearchMessagesFilterDocument())
+    }
+
+    private fun searchInto(chatId: Long, filter: TdApi.SearchMessagesFilter) {
+        val s = TdApi.SearchChatMessages()
+        s.chatId = chatId
+        s.query = ""
+        s.fromMessageId = 0
+        s.offset = 0
+        s.limit = 50
+        s.filter = filter
+        client?.send(s, Client.ResultHandler { r ->
+            if (r is TdApi.FoundChatMessages) {
+                val found = r.messages.mapNotNull { toItem(it) }
+                videos = (videos + found).sortedByDescending { it.messageId }
+            } else if (r is TdApi.Error) {
+                message = r.message
+            }
+        })
+    }
+
+    private fun toItem(m: TdApi.Message): VideoItem? {
+        val c = m.content
+        if (c is TdApi.MessageVideo) {
+            val f = c.video.video
+            var title = c.video.fileName ?: ""
+            if (title.isBlank()) title = c.caption.text.take(60)
+            if (title.isBlank()) title = "Video"
+            val mb = maxOf(f.size, f.expectedSize) / 1048576
+            val minutes = c.video.duration / 60
+            return VideoItem(m.id, title, "$minutes min  |  $mb MB", f.id)
+        }
+        if (c is TdApi.MessageDocument) {
+            val d = c.document
+            val name = d.fileName ?: ""
+            val mime = d.mimeType ?: ""
+            val lower = name.lowercase()
+            val isVideo = mime.startsWith("video/") ||
+                lower.endsWith(".mkv") || lower.endsWith(".mp4") ||
+                lower.endsWith(".avi") || lower.endsWith(".webm")
+            if (!isVideo) return null
+            val f = d.document
+            var title = name
+            if (title.isBlank()) title = c.caption.text.take(60)
+            if (title.isBlank()) title = "Video file"
+            val mb = maxOf(f.size, f.expectedSize) / 1048576
+            return VideoItem(m.id, title, "file  |  $mb MB", f.id)
+        }
+        return null
+    }
+
     private fun submit(text: String) {
         when (stage) {
             "phone" -> send(TdApi.SetAuthenticationPhoneNumber(text.trim(), null))
@@ -150,6 +217,10 @@ class MainActivity : ComponentActivity() {
     private fun Screen() {
         var input by remember { mutableStateOf("") }
 
+        BackHandler(enabled = openChatId != null) {
+            openChatId = null
+        }
+
         Column(
             modifier = Modifier.fillMaxSize().padding(24.dp),
             verticalArrangement = if (stage == "ready") Arrangement.Top else Arrangement.Center
@@ -161,13 +232,44 @@ class MainActivity : ComponentActivity() {
                 "starting" -> Text("Starting Telegram...")
                 "error" -> Text("Something went wrong")
                 "ready" -> {
-                    Text("Your chats", style = MaterialTheme.typography.titleMedium)
-                    LazyColumn(modifier = Modifier.weight(1f)) {
-                        items(chatIds) { id ->
-                            Text(
-                                text = chatTitles[id] ?: "...",
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)
-                            )
+                    val current = openChatId
+                    if (current == null) {
+                        Text("Your chats", style = MaterialTheme.typography.titleMedium)
+                        LazyColumn(modifier = Modifier.weight(1f)) {
+                            items(chatIds) { id ->
+                                Text(
+                                    text = chatTitles[id] ?: "...",
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { openChat(id) }
+                                        .padding(vertical = 12.dp)
+                                )
+                            }
+                        }
+                    } else {
+                        Button(onClick = { openChatId = null }) {
+                            Text("Back")
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            chatTitles[current] ?: "",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        if (videos.isEmpty()) {
+                            Text("Loading videos... (or none found)")
+                        }
+                        LazyColumn(modifier = Modifier.weight(1f)) {
+                            items(videos) { v ->
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 10.dp)
+                                ) {
+                                    Text(v.title)
+                                    Text(v.info, style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
                         }
                     }
                 }
