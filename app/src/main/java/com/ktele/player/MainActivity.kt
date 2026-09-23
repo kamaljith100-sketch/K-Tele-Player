@@ -10,12 +10,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -29,6 +32,8 @@ class MainActivity : ComponentActivity() {
     private var client: Client? = null
     private var stage by mutableStateOf("starting")
     private var message by mutableStateOf("")
+    private var chatIds by mutableStateOf(listOf<Long>())
+    private val chatTitles = mutableStateMapOf<Long, String>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -71,7 +76,10 @@ class MainActivity : ComponentActivity() {
             is TdApi.AuthorizationStateWaitPhoneNumber -> stage = "phone"
             is TdApi.AuthorizationStateWaitCode -> stage = "code"
             is TdApi.AuthorizationStateWaitPassword -> stage = "password"
-            is TdApi.AuthorizationStateReady -> stage = "ready"
+            is TdApi.AuthorizationStateReady -> {
+                stage = "ready"
+                loadChats()
+            }
             else -> {}
         }
     }
@@ -101,6 +109,35 @@ class MainActivity : ComponentActivity() {
         })
     }
 
+    private fun loadChats() {
+        val load = TdApi.LoadChats()
+        load.chatList = TdApi.ChatListMain()
+        load.limit = 100
+        client?.send(load, Client.ResultHandler { fetchChats() })
+    }
+
+    private fun fetchChats() {
+        val get = TdApi.GetChats()
+        get.chatList = TdApi.ChatListMain()
+        get.limit = 100
+        client?.send(get, Client.ResultHandler { r ->
+            if (r is TdApi.Chats) {
+                chatIds = r.chatIds.toList()
+                for (id in r.chatIds) {
+                    val gc = TdApi.GetChat()
+                    gc.chatId = id
+                    client?.send(gc, Client.ResultHandler { c ->
+                        if (c is TdApi.Chat) {
+                            chatTitles[c.id] = c.title
+                        }
+                    })
+                }
+            } else if (r is TdApi.Error) {
+                message = r.message
+            }
+        })
+    }
+
     private fun submit(text: String) {
         when (stage) {
             "phone" -> send(TdApi.SetAuthenticationPhoneNumber(text.trim(), null))
@@ -115,15 +152,25 @@ class MainActivity : ComponentActivity() {
 
         Column(
             modifier = Modifier.fillMaxSize().padding(24.dp),
-            verticalArrangement = Arrangement.Center
+            verticalArrangement = if (stage == "ready") Arrangement.Top else Arrangement.Center
         ) {
             Text("K-Tele Player", style = MaterialTheme.typography.headlineMedium)
             Spacer(modifier = Modifier.height(24.dp))
 
             when (stage) {
                 "starting" -> Text("Starting Telegram...")
-                "ready" -> Text("Logged in to Telegram")
                 "error" -> Text("Something went wrong")
+                "ready" -> {
+                    Text("Your chats", style = MaterialTheme.typography.titleMedium)
+                    LazyColumn(modifier = Modifier.weight(1f)) {
+                        items(chatIds) { id ->
+                            Text(
+                                text = chatTitles[id] ?: "...",
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)
+                            )
+                        }
+                    }
+                }
                 else -> {
                     val label = when (stage) {
                         "phone" -> "Phone number (with country code, e.g. +91...)"
