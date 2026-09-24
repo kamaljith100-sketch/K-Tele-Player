@@ -787,4 +787,4 @@ class MainActivity : ComponentActivity() {
                         )
 
                         LazyColumn(
-                            modifier = Modifier.w
+                            modifier = Modifier.weight(1f)
