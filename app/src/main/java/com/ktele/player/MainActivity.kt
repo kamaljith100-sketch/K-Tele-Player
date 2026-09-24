@@ -84,7 +84,6 @@ class TdFileDataSource(
 
     override fun open(dataSpec: DataSpec): Long {
         currentUri = dataSpec.uri
-
         transferInitializing(dataSpec)
 
         position = dataSpec.position
@@ -782,4 +781,4 @@ class MainActivity : ComponentActivity() {
                         ) {
                             items(chatIds) { id ->
                                 Text(
-                                    text = 
+                                    text = c
