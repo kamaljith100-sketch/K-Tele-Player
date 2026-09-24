@@ -18,16 +18,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-
-
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -35,7 +31,6 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -113,7 +108,9 @@ class TdFileDataSource(
         offset: Int,
         length: Int
     ): Int {
-        if (length == 0) return 0
+        if (length == 0) {
+            return 0
+        }
 
         if (position >= fileSize) {
             return C.RESULT_END_OF_INPUT
@@ -125,7 +122,8 @@ class TdFileDataSource(
             fileSize - position
         )
 
-        if (position < windowStart ||
+        if (
+            position < windowStart ||
             position + want > windowEnd
         ) {
             val download = TdApi.DownloadFile()
@@ -143,9 +141,7 @@ class TdFileDataSource(
             }
 
             if (result is TdApi.Error) {
-                throw IOException(
-                    "Telegram: ${result.message}"
-                )
+                throw IOException("Telegram: ${result.message}")
             }
 
             windowStart = position
@@ -182,9 +178,7 @@ class TdFileDataSource(
         }
 
         if (result is TdApi.Error) {
-            throw IOException(
-                "Telegram: ${result.message}"
-            )
+            throw IOException("Telegram: ${result.message}")
         }
 
         throw IOException("Could not read file")
@@ -450,10 +444,9 @@ class MainActivity : ComponentActivity() {
             search,
             Client.ResultHandler { result ->
                 if (result is TdApi.FoundChatMessages) {
-                    val found =
-                        result.messages.mapNotNull {
-                            toItem(it)
-                        }
+                    val found = result.messages.mapNotNull {
+                        toItem(it)
+                    }
 
                     videos = (
                         videos + found
@@ -612,13 +605,12 @@ class MainActivity : ComponentActivity() {
             activity?.requestedOrientation =
                 ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
 
-            val controller =
-                activity?.window?.let { window ->
-                    WindowCompat.getInsetsController(
-                        window,
-                        window.decorView
-                    )
-                }
+            val controller = activity?.window?.let { window ->
+                WindowCompat.getInsetsController(
+                    window,
+                    window.decorView
+                )
+            }
 
             controller?.hide(
                 WindowInsetsCompat.Type.systemBars()
@@ -752,15 +744,14 @@ class MainActivity : ComponentActivity() {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(24.dp),
-            verticalArrangement =
-                if (stage == "ready") {
-                    Arrangement.Top
-                } else {
-                    Arrangement.Center
-                }
+            verticalArrangement = if (stage == "ready") {
+                Arrangement.Top
+            } else {
+                Arrangement.Center
+            }
         ) {
             Text(
-                "K-Tele Player",
+                text = "K-Tele Player",
                 style = MaterialTheme.typography.headlineMedium
             )
 
@@ -782,9 +773,13 @@ class MainActivity : ComponentActivity() {
 
                     if (current == null) {
                         Text(
-                            "Your chats",
+                            text = "Your chats",
                             style = MaterialTheme.typography.titleMedium
                         )
 
                         LazyColumn(
                             modifier = Modifier.weight(1f)
+                        ) {
+                            items(chatIds) { id ->
+                                Text(
+                                    text = 
