@@ -107,7 +107,7 @@ class TdFileDataSource(
         rp.offset = position
         rp.count = want
         val res = fetch(rp)
-        if (res is TdApi.FilePart) {
+        if (res is TdApi.Data) {
             val data = res.data
             if (data.isEmpty()) throw IOException("Empty data from Telegram")
             System.arraycopy(data, 0, buffer, offset, data.size)
