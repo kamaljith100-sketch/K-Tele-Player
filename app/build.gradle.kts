@@ -38,6 +38,8 @@ android {
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.15"
     }
+}
+
 dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.activity:activity-compose:1.10.0")
@@ -51,4 +53,3 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.4.1")
     implementation("androidx.media3:media3-ui:1.4.1")
 }
-
