@@ -1,9 +1,12 @@
 package com.ktele.player
 
 import android.app.Activity
+import android.content.Context
+import android.graphics.Color as AndroidColor
 import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.os.Bundle
+import android.os.SystemClock
 
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -23,18 +26,22 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -55,9 +62,11 @@ import androidx.media3.common.Player
 import androidx.media3.datasource.BaseDataSource
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 
 import org.drinkless.tdlib.Client
@@ -66,6 +75,37 @@ import org.drinkless.tdlib.TdApi
 import java.io.IOException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+
+import kotlinx.coroutines.delay
+import kotlin.math.ceil
+
+
+private const val SUBTITLE_PREFERENCES = "subtitle_preferences"
+private const val SUBTITLE_COLOR_KEY = "subtitle_color"
+private const val DEFAULT_SUBTITLE_COLOR_ID = "white"
+
+private data class SubtitleColorPreset(
+    val id: String,
+    val label: String,
+    val color: Long
+)
+
+private val subtitleColorPresets = listOf(
+    SubtitleColorPreset("white", "White", 0xFFFFFFFF),
+    SubtitleColorPreset("yellow", "Yellow", 0xFFFFD54F),
+    SubtitleColorPreset("cyan", "Cyan", 0xFF4DD0E1),
+    SubtitleColorPreset("green", "Green", 0xFF8BC34A)
+)
+
+private fun subtitleCaptionStyle(foregroundColor: Int) =
+    CaptionStyleCompat(
+        foregroundColor,
+        AndroidColor.TRANSPARENT,
+        AndroidColor.TRANSPARENT,
+        CaptionStyleCompat.EDGE_TYPE_OUTLINE,
+        AndroidColor.BLACK,
+        null
+    )
 
 
 private val kTeleColorScheme = darkColorScheme(
@@ -97,6 +137,16 @@ data class VideoItem(
     val fileId: Int,
     val size: Long
 )
+
+// Match the player load-control thresholds so the displayed ETA has a known target.
+private const val VIDEO_MIN_BUFFER_MS = 50_000
+private const val VIDEO_MAX_BUFFER_MS = 50_000
+private const val VIDEO_START_BUFFER_MS = 1_000
+private const val VIDEO_REBUFFER_BUFFER_MS = 2_000
+
+// Fetch only small on-demand ranges; playback reads each range incrementally.
+private const val TELEGRAM_STREAM_CHUNK_BYTES = 1024L * 1024L
+private const val TELEGRAM_STREAM_READ_BYTES = 256L * 1024L
 
 
 class TdFileDataSource(
@@ -144,36 +194,45 @@ class TdFileDataSource(
             return C.RESULT_END_OF_INPUT
         }
 
-        val want = minOf(
+        val requested = minOf(
             length.toLong(),
-            262144L,
+            TELEGRAM_STREAM_READ_BYTES,
             fileSize - position
         )
 
-        if (
-            position < windowStart ||
-            position + want > windowEnd
-        ) {
+        val chunkStart =
+            (position / TELEGRAM_STREAM_CHUNK_BYTES) * TELEGRAM_STREAM_CHUNK_BYTES
+        val chunkEnd = minOf(
+            fileSize,
+            chunkStart + TELEGRAM_STREAM_CHUNK_BYTES
+        )
+
+        if (position < windowStart || position >= windowEnd) {
             val download = TdApi.DownloadFile()
 
             download.fileId = fileId
             download.priority = 32
-            download.offset = position
-            download.limit = 8L * 1024L * 1024L
+            download.offset = chunkStart
+            download.limit = chunkEnd - chunkStart
             download.synchronous = true
 
             val result = fetch(download)
 
             if (result == null) {
-                throw IOException("Telegram download timeout")
+                throw IOException("Telegram stream chunk timeout")
             }
 
             if (result is TdApi.Error) {
                 throw IOException("Telegram: ${result.message}")
             }
 
-            windowStart = position
-            windowEnd = position + download.limit
+            windowStart = chunkStart
+            windowEnd = chunkEnd
+        }
+
+        val want = minOf(requested, windowEnd - position)
+        if (want <= 0L) {
+            throw IOException("No stream data available at offset $position")
         }
 
         val readPart = TdApi.ReadFilePart()
@@ -233,6 +292,8 @@ class MainActivity : ComponentActivity() {
 
     private var stage by mutableStateOf("starting")
     private var message by mutableStateOf("")
+    private var myUserId by mutableStateOf<Long?>(null)
+    private var savedMessagesChatId by mutableStateOf<Long?>(null)
 
     private var chatIds by mutableStateOf(
         listOf<Long>()
@@ -240,6 +301,9 @@ class MainActivity : ComponentActivity() {
 
     private val chatTitles =
         mutableStateMapOf<Long, String>()
+
+    private val chatPinnedInMainList =
+        mutableStateMapOf<Long, Boolean>()
 
     private var openChatId by mutableStateOf<Long?>(null)
 
@@ -332,7 +396,15 @@ class MainActivity : ComponentActivity() {
 
             is TdApi.AuthorizationStateReady -> {
                 stage = "ready"
-                loadChats()
+                client?.send(
+                    TdApi.GetMe(),
+                    Client.ResultHandler { result ->
+                        if (result is TdApi.User) {
+                            myUserId = result.id
+                        }
+                        loadChats()
+                    }
+                )
             }
 
             else -> {
@@ -436,6 +508,19 @@ class MainActivity : ComponentActivity() {
                                 if (chatResult is TdApi.Chat) {
                                     chatTitles[chatResult.id] =
                                         chatResult.title
+                                    val selfUserId = myUserId
+                                    val privateChatType =
+                                        chatResult.type as? TdApi.ChatTypePrivate
+                                    if (selfUserId != null &&
+                                        privateChatType?.userId == selfUserId
+                                    ) {
+                                        savedMessagesChatId = chatResult.id
+                                    }
+                                    chatPinnedInMainList[chatResult.id] =
+                                        chatResult.positions.any { position ->
+                                            position.list is TdApi.ChatListMain &&
+                                                position.isPinned
+                                        }
                                 }
                             }
                         )
@@ -635,14 +720,38 @@ class MainActivity : ComponentActivity() {
         item: VideoItem
     ) {
         val context = LocalContext.current
+        val preferences = remember(context) {
+            context.getSharedPreferences(
+                SUBTITLE_PREFERENCES,
+                Context.MODE_PRIVATE
+            )
+        }
+        var subtitleColorId by remember(preferences) {
+            mutableStateOf(
+                preferences.getString(
+                    SUBTITLE_COLOR_KEY,
+                    DEFAULT_SUBTITLE_COLOR_ID
+                ) ?: DEFAULT_SUBTITLE_COLOR_ID
+            )
+        }
+        var showSubtitleColorOptions by remember {
+            mutableStateOf(false)
+        }
+        val selectedSubtitlePreset = subtitleColorPresets.firstOrNull {
+            it.id == subtitleColorId
+        } ?: subtitleColorPresets.first()
         val activity = context as? Activity
 
         var error by remember {
             mutableStateOf("")
         }
 
-        var fillScreen by remember(item.fileId) {
-            mutableStateOf(true)
+        var playbackState by remember(item.fileId) {
+            mutableStateOf(Player.STATE_BUFFERING)
+        }
+
+        var estimatedStartSeconds by remember(item.fileId) {
+            mutableStateOf<Long?>(null)
         }
 
         DisposableEffect(Unit) {
@@ -706,7 +815,18 @@ class MainActivity : ComponentActivity() {
                         MediaItem.fromUri(uri)
                     )
 
-            val exo = ExoPlayer.Builder(context).build()
+            val loadControl = DefaultLoadControl.Builder()
+                .setBufferDurationsMs(
+                    VIDEO_MIN_BUFFER_MS,
+                    VIDEO_MAX_BUFFER_MS,
+                    VIDEO_START_BUFFER_MS,
+                    VIDEO_REBUFFER_BUFFER_MS
+                )
+                .build()
+
+            val exo = ExoPlayer.Builder(context)
+                .setLoadControl(loadControl)
+                .build()
 
             exo.addListener(
                 object : Player.Listener {
@@ -733,6 +853,87 @@ class MainActivity : ComponentActivity() {
             exo
         }
 
+        LaunchedEffect(player) {
+            var previousSampleTimeMs = SystemClock.elapsedRealtime()
+            var previousBufferedDurationMs =
+                player.totalBufferedDuration.coerceAtLeast(0L)
+            var bufferedMsPerWallMs = 0.0
+            var hasBufferRate = false
+            var lastBufferProgressTimeMs = previousSampleTimeMs
+            var hasStartedPlayback = false
+
+            while (true) {
+                val nowMs = SystemClock.elapsedRealtime()
+                val currentState = player.playbackState
+                val currentBufferedDurationMs =
+                    player.totalBufferedDuration.coerceAtLeast(0L)
+                val elapsedMs = nowMs - previousSampleTimeMs
+                val bufferedDeltaMs =
+                    currentBufferedDurationMs - previousBufferedDurationMs
+
+                if (currentState == Player.STATE_BUFFERING) {
+                    if (bufferedDeltaMs < 0L) {
+                        bufferedMsPerWallMs = 0.0
+                        hasBufferRate = false
+                        lastBufferProgressTimeMs = nowMs
+                    } else if (elapsedMs > 0L && bufferedDeltaMs > 0L) {
+                        val sampleRate =
+                            bufferedDeltaMs.toDouble() / elapsedMs.toDouble()
+                        bufferedMsPerWallMs = if (hasBufferRate) {
+                            bufferedMsPerWallMs * 0.7 + sampleRate * 0.3
+                        } else {
+                            sampleRate
+                        }
+                        hasBufferRate = true
+                        lastBufferProgressTimeMs = nowMs
+                    }
+
+                    if (nowMs - lastBufferProgressTimeMs > 3_000L) {
+                        hasBufferRate = false
+                    }
+                } else {
+                    hasBufferRate = false
+                    lastBufferProgressTimeMs = nowMs
+                }
+
+                if (currentState == Player.STATE_READY && player.playWhenReady) {
+                    hasStartedPlayback = true
+                }
+
+                playbackState = currentState
+                estimatedStartSeconds =
+                    if (currentState != Player.STATE_BUFFERING) {
+                        null
+                    } else {
+                        val targetBufferedMs =
+                            if (hasStartedPlayback) {
+                                VIDEO_REBUFFER_BUFFER_MS.toLong()
+                            } else {
+                                VIDEO_START_BUFFER_MS.toLong()
+                            }
+                        val remainingBufferMs =
+                            (targetBufferedMs - currentBufferedDurationMs)
+                                .coerceAtLeast(0L)
+
+                        when {
+                            remainingBufferMs == 0L -> 0L
+                            hasBufferRate && bufferedMsPerWallMs > 0.0 -> {
+                                ceil(
+                                    remainingBufferMs.toDouble() /
+                                        bufferedMsPerWallMs /
+                                        1_000.0
+                                ).toLong().coerceAtLeast(1L)
+                            }
+                            else -> null
+                        }
+                    }
+
+                previousSampleTimeMs = nowMs
+                previousBufferedDurationMs = currentBufferedDurationMs
+                delay(250)
+            }
+        }
+
         DisposableEffect(player) {
             onDispose {
                 player.release()
@@ -750,42 +951,93 @@ class MainActivity : ComponentActivity() {
                 factory = { viewContext ->
                     PlayerView(viewContext).apply {
                         this.player = player
+                        subtitleView?.setStyle(
+                            subtitleCaptionStyle(selectedSubtitlePreset.color.toInt())
+                        )
                         keepScreenOn = true
                         useController = true
                         resizeMode =
                             AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                     }
                 },
-                modifier = Modifier.fillMaxSize(),
-                update = { view ->
-                    view.resizeMode = if (fillScreen) {
-                        AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                    } else {
-                        AspectRatioFrameLayout.RESIZE_MODE_FIT
-                    }
-                }
+                update = { playerView ->
+                    playerView.subtitleView?.setStyle(
+                        subtitleCaptionStyle(selectedSubtitlePreset.color.toInt())
+                    )
+                },
+                modifier = Modifier.fillMaxSize()
             )
 
-            Button(
-                onClick = {
-                    playing = null
-                },
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(16.dp)
-            ) {
-                Text("Back")
-            }
-
-            Button(
-                onClick = {
-                    fillScreen = !fillScreen
-                },
+            Column(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(16.dp)
+                    .padding(16.dp),
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text(if (fillScreen) "Fit" else "Fill")
+                Button(
+                    onClick = {
+                        showSubtitleColorOptions = !showSubtitleColorOptions
+                    }
+                ) {
+                    Text("Subtitle: ${selectedSubtitlePreset.label}")
+                }
+
+                if (showSubtitleColorOptions) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+                        shape = RoundedCornerShape(12.dp),
+                        tonalElevation = 6.dp
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Text("Subtitle color")
+                            subtitleColorPresets.forEach { preset ->
+                                TextButton(
+                                    onClick = {
+                                        subtitleColorId = preset.id
+                                        preferences.edit()
+                                            .putString(SUBTITLE_COLOR_KEY, preset.id)
+                                            .apply()
+                                        showSubtitleColorOptions = false
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        text = if (preset.id == subtitleColorId) {
+                                            "✓ ${preset.label}"
+                                        } else {
+                                            preset.label
+                                        },
+                                        color = Color(preset.color)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (playbackState == Player.STATE_BUFFERING) {
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    CircularProgressIndicator()
+                    val etaSeconds = estimatedStartSeconds
+                    Text(
+                        text = when {
+                            etaSeconds == null -> "Estimating start time…"
+                            etaSeconds <= 0L -> "Starting soon…"
+                            else -> "Starting in about ${etaSeconds}s"
+                        }
+                    )
+                }
             }
 
             if (error.isNotEmpty()) {
@@ -858,10 +1110,22 @@ class MainActivity : ComponentActivity() {
                                 style = MaterialTheme.typography.titleMedium
                             )
 
+                            val savedMessagesId = savedMessagesChatId
+                            val orderedChatIds =
+                                chatIds.filter { it == savedMessagesId } +
+                                    chatIds.filter {
+                                        it != savedMessagesId &&
+                                            chatPinnedInMainList[it] == true
+                                    } +
+                                    chatIds.filter {
+                                        it != savedMessagesId &&
+                                            chatPinnedInMainList[it] != true
+                                    }
+
                             LazyColumn(
                                 modifier = Modifier.weight(1f)
                             ) {
-                                items(chatIds) { id ->
+                                items(orderedChatIds) { id ->
                                     Text(
                                         text = chatTitles[id] ?: "...",
                                         modifier = Modifier
