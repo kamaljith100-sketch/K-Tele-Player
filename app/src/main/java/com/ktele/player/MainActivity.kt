@@ -600,6 +600,10 @@ class MainActivity : ComponentActivity() {
             mutableStateOf("")
         }
 
+        var fillScreen by remember(item.fileId) {
+            mutableStateOf(true)
+        }
+
         DisposableEffect(Unit) {
             val actionBar = activity?.actionBar
             val restoreActionBar = actionBar?.isShowing == true
@@ -708,10 +712,17 @@ class MainActivity : ComponentActivity() {
                         keepScreenOn = true
                         useController = true
                         resizeMode =
-                            AspectRatioFrameLayout.RESIZE_MODE_FIT
+                            AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                     }
                 },
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxSize(),
+                update = { view ->
+                    view.resizeMode = if (fillScreen) {
+                        AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                    } else {
+                        AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    }
+                }
             )
 
             Button(
@@ -723,6 +734,17 @@ class MainActivity : ComponentActivity() {
                     .padding(16.dp)
             ) {
                 Text("Back")
+            }
+
+            Button(
+                onClick = {
+                    fillScreen = !fillScreen
+                },
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(16.dp)
+            ) {
+                Text(if (fillScreen) "Fit" else "Fill")
             }
 
             if (error.isNotEmpty()) {
@@ -738,55 +760,145 @@ class MainActivity : ComponentActivity() {
 
 
     @Composable
-    private fun ListScreen() {
-        var input by remember {
-            mutableStateOf("")
-        }
-
-        BackHandler(enabled = openChatId != null) {
-            openChatId = null
-        }
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(24.dp),
-            verticalArrangement = if (stage == "ready") {
-                Arrangement.Top
-            } else {
-                Arrangement.Center
+        private fun ListScreen() {
+            var input by remember {
+                mutableStateOf("")
             }
-        ) {
-            Text(
-                text = "K-Tele Player",
-                style = MaterialTheme.typography.headlineMedium
-            )
 
-            Spacer(
-                modifier = Modifier.height(24.dp)
-            )
+            BackHandler(enabled = openChatId != null) {
+                openChatId = null
+            }
 
-            when (stage) {
-                "starting" -> {
-                    Text("Starting Telegram...")
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp),
+                verticalArrangement = if (stage == "ready") {
+                    Arrangement.Top
+                } else {
+                    Arrangement.Center
                 }
+            ) {
+                Text(
+                    text = "K-Tele Player",
+                    style = MaterialTheme.typography.headlineMedium
+                )
 
-                "error" -> {
-                    Text("Something went wrong")
-                }
+                Spacer(
+                    modifier = Modifier.height(24.dp)
+                )
 
-                "ready" -> {
-                    val current = openChatId
+                when (stage) {
+                    "starting" -> {
+                        Text("Starting Telegram...")
+                    }
 
-                    if (current == null) {
-                        Text(
-                            text = "Your chats",
-                            style = MaterialTheme.typography.titleMedium
+                    "error" -> {
+                        Text("Something went wrong")
+                    }
+
+                    "ready" -> {
+                        val current = openChatId
+
+                        if (current == null) {
+                            Text(
+                                text = "Your chats",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+
+                            LazyColumn(
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                items(chatIds) { id ->
+                                    Text(
+                                        text = chatTitles[id] ?: "...",
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { openChat(id) }
+                                            .padding(vertical = 12.dp)
+                                    )
+                                }
+                            }
+                        } else {
+                            Button(
+                                onClick = { openChatId = null }
+                            ) {
+                                Text("Back")
+                            }
+
+                            Spacer(
+                                modifier = Modifier.height(12.dp)
+                            )
+
+                            Text(
+                                text = chatTitles[current] ?: "",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+
+                            Spacer(
+                                modifier = Modifier.height(12.dp)
+                            )
+
+                            if (videos.isEmpty()) {
+                                Text("Loading videos... (or none found)")
+                            }
+
+                            LazyColumn(
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                items(videos) { video ->
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { playing = video }
+                                            .padding(vertical = 10.dp)
+                                    ) {
+                                        Text(video.title)
+                                        Text(
+                                            video.info,
+                                            style = MaterialTheme.typography.bodySmall
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    else -> {
+                        val label = when (stage) {
+                            "phone" -> "Phone number (with country code, e.g. +91...)"
+                            "code" -> "Login code from Telegram"
+                            else -> "Two-step verification password"
+                        }
+
+                        OutlinedTextField(
+                            value = input,
+                            onValueChange = { input = it },
+                            label = { Text(label) },
+                            modifier = Modifier.fillMaxWidth()
                         )
 
-                        LazyColumn(
-                            modifier = Modifier.weight(1f)
+                        Spacer(
+                            modifier = Modifier.height(16.dp)
+                        )
+
+                        Button(
+                            onClick = {
+                                submit(input)
+                                input = ""
+                            }
                         ) {
-                            items(chatIds) { id ->
-                                Text(
-                                    text = c
+                            Text("Next")
+                        }
+                    }
+                }
+
+                if (message.isNotEmpty()) {
+                    Spacer(
+                        modifier = Modifier.height(16.dp)
+                    )
+                    Text(message)
+                }
+            }
+        }
+    }
