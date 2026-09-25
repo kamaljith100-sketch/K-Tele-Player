@@ -246,6 +246,8 @@ class MainActivity : ComponentActivity() {
 
     private var stage by mutableStateOf("starting")
     private var message by mutableStateOf("")
+    private var myUserId by mutableStateOf<Long?>(null)
+    private var savedMessagesChatId by mutableStateOf<Long?>(null)
 
     private var chatIds by mutableStateOf(
         listOf<Long>()
@@ -348,7 +350,15 @@ class MainActivity : ComponentActivity() {
 
             is TdApi.AuthorizationStateReady -> {
                 stage = "ready"
-                loadChats()
+                client?.send(
+                    TdApi.GetMe(),
+                    Client.ResultHandler { result ->
+                        if (result is TdApi.User) {
+                            myUserId = result.id
+                        }
+                        loadChats()
+                    }
+                )
             }
 
             else -> {
@@ -452,6 +462,14 @@ class MainActivity : ComponentActivity() {
                                 if (chatResult is TdApi.Chat) {
                                     chatTitles[chatResult.id] =
                                         chatResult.title
+                                    val selfUserId = myUserId
+                                    val privateChatType =
+                                        chatResult.type as? TdApi.ChatTypePrivate
+                                    if (selfUserId != null &&
+                                        privateChatType?.userId == selfUserId
+                                    ) {
+                                        savedMessagesChatId = chatResult.id
+                                    }
                                     chatPinnedInMainList[chatResult.id] =
                                         chatResult.positions.any { position ->
                                             position.list is TdApi.ChatListMain &&
@@ -846,9 +864,17 @@ class MainActivity : ComponentActivity() {
                                 style = MaterialTheme.typography.titleMedium
                             )
 
+                            val savedMessagesId = savedMessagesChatId
                             val orderedChatIds =
-                                chatIds.filter { chatPinnedInMainList[it] == true } +
-                                    chatIds.filter { chatPinnedInMainList[it] != true }
+                                chatIds.filter { it == savedMessagesId } +
+                                    chatIds.filter {
+                                        it != savedMessagesId &&
+                                            chatPinnedInMainList[it] == true
+                                    } +
+                                    chatIds.filter {
+                                        it != savedMessagesId &&
+                                            chatPinnedInMainList[it] != true
+                                    }
 
                             LazyColumn(
                                 modifier = Modifier.weight(1f)
