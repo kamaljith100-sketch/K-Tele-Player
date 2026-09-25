@@ -750,6 +750,10 @@ class MainActivity : ComponentActivity() {
             mutableStateOf(Player.STATE_BUFFERING)
         }
 
+        var isVideoPlaying by remember(item.fileId) {
+            mutableStateOf(false)
+        }
+
         var estimatedStartSeconds by remember(item.fileId) {
             mutableStateOf<Long?>(null)
         }
@@ -901,6 +905,10 @@ class MainActivity : ComponentActivity() {
                 }
 
                 playbackState = currentState
+                isVideoPlaying = player.isPlaying
+                if (isVideoPlaying) {
+                    showSubtitleColorOptions = false
+                }
                 estimatedStartSeconds =
                     if (currentState != Player.STATE_BUFFERING) {
                         null
@@ -968,51 +976,53 @@ class MainActivity : ComponentActivity() {
                 modifier = Modifier.fillMaxSize()
             )
 
-            Column(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(16.dp),
-                horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Button(
-                    onClick = {
-                        showSubtitleColorOptions = !showSubtitleColorOptions
-                    }
+            if (!isVideoPlaying) {
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(16.dp),
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text("Subtitle: ${selectedSubtitlePreset.label}")
-                }
-
-                if (showSubtitleColorOptions) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
-                        shape = RoundedCornerShape(12.dp),
-                        tonalElevation = 6.dp
+                    Button(
+                        onClick = {
+                            showSubtitleColorOptions = !showSubtitleColorOptions
+                        }
                     ) {
-                        Column(
-                            modifier = Modifier.padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        Text("Subtitle: ${selectedSubtitlePreset.label}")
+                    }
+    
+                    if (showSubtitleColorOptions) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+                            shape = RoundedCornerShape(12.dp),
+                            tonalElevation = 6.dp
                         ) {
-                            Text("Subtitle color")
-                            subtitleColorPresets.forEach { preset ->
-                                TextButton(
-                                    onClick = {
-                                        subtitleColorId = preset.id
-                                        preferences.edit()
-                                            .putString(SUBTITLE_COLOR_KEY, preset.id)
-                                            .apply()
-                                        showSubtitleColorOptions = false
-                                    },
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text(
-                                        text = if (preset.id == subtitleColorId) {
-                                            "✓ ${preset.label}"
-                                        } else {
-                                            preset.label
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Text("Subtitle color")
+                                subtitleColorPresets.forEach { preset ->
+                                    TextButton(
+                                        onClick = {
+                                            subtitleColorId = preset.id
+                                            preferences.edit()
+                                                .putString(SUBTITLE_COLOR_KEY, preset.id)
+                                                .apply()
+                                            showSubtitleColorOptions = false
                                         },
-                                        color = Color(preset.color)
-                                    )
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(
+                                            text = if (preset.id == subtitleColorId) {
+                                                "✓ ${preset.label}"
+                                            } else {
+                                                preset.label
+                                            },
+                                            color = Color(preset.color)
+                                        )
+                                    }
                                 }
                             }
                         }
