@@ -601,6 +601,10 @@ class MainActivity : ComponentActivity() {
         }
 
         DisposableEffect(Unit) {
+            val actionBar = activity?.actionBar
+            val restoreActionBar = actionBar?.isShowing == true
+            actionBar?.hide()
+
             activity?.requestedOrientation =
                 ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
 
@@ -623,6 +627,10 @@ class MainActivity : ComponentActivity() {
                 controller?.show(
                     WindowInsetsCompat.Type.systemBars()
                 )
+
+                if (restoreActionBar) {
+                    actionBar?.show()
+                }
 
                 activity?.requestedOrientation =
                     ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
