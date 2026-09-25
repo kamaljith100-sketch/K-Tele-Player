@@ -70,6 +70,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 import kotlinx.coroutines.delay
+import kotlin.math.roundToInt
 
 
 private val kTeleColorScheme = darkColorScheme(
@@ -689,7 +690,7 @@ class MainActivity : ComponentActivity() {
         }
 
         var bufferedPercentage by remember(item.fileId) {
-            mutableStateOf(0)
+            mutableStateOf<Int?>(null)
         }
 
         DisposableEffect(Unit) {
@@ -783,8 +784,17 @@ class MainActivity : ComponentActivity() {
         LaunchedEffect(player) {
             while (true) {
                 val newPlaybackState = player.playbackState
+                val durationMs = player.duration
+                val bufferedPositionMs = player.bufferedPosition
                 val newBufferedPercentage =
-                    player.bufferedPercentage.coerceIn(0, 100)
+                    if (durationMs > 0L && bufferedPositionMs >= 0L) {
+                        (
+                            bufferedPositionMs.toDouble() /
+                                durationMs.toDouble() * 100.0
+                        ).roundToInt().coerceIn(0, 100)
+                    } else {
+                        null
+                    }
 
                 if (playbackState != newPlaybackState) {
                     playbackState = newPlaybackState
@@ -832,10 +842,16 @@ class MainActivity : ComponentActivity() {
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    CircularProgressIndicator(
-                        progress = { bufferedPercentage / 100f }
-                    )
-                    Text("Buffering $bufferedPercentage%")
+                    val percent = bufferedPercentage
+                    if (percent == null) {
+                        CircularProgressIndicator()
+                        Text("Buffering…")
+                    } else {
+                        CircularProgressIndicator(
+                            progress = { percent / 100f }
+                        )
+                        Text("Buffering $percent%")
+                    }
                 }
             }
 
