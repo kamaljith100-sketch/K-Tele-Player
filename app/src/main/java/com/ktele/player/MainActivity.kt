@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.os.Bundle
+import android.os.SystemClock
 
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -57,6 +58,7 @@ import androidx.media3.common.Player
 import androidx.media3.datasource.BaseDataSource
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -70,7 +72,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 import kotlinx.coroutines.delay
-import kotlin.math.roundToInt
+import kotlin.math.ceil
 
 
 private val kTeleColorScheme = darkColorScheme(
@@ -102,6 +104,12 @@ data class VideoItem(
     val fileId: Int,
     val size: Long
 )
+
+// Match the player load-control thresholds so the displayed ETA has a known target.
+private const val VIDEO_MIN_BUFFER_MS = 50_000
+private const val VIDEO_MAX_BUFFER_MS = 50_000
+private const val VIDEO_START_BUFFER_MS = 1_000
+private const val VIDEO_REBUFFER_BUFFER_MS = 2_000
 
 // Fetch only small on-demand ranges; playback reads each range incrementally.
 private const val TELEGRAM_STREAM_CHUNK_BYTES = 1024L * 1024L
@@ -689,8 +697,8 @@ class MainActivity : ComponentActivity() {
             mutableStateOf(Player.STATE_BUFFERING)
         }
 
-        var bufferedPercentage by remember(item.fileId) {
-            mutableStateOf<Int?>(null)
+        var estimatedStartSeconds by remember(item.fileId) {
+            mutableStateOf<Long?>(null)
         }
 
         DisposableEffect(Unit) {
@@ -754,7 +762,18 @@ class MainActivity : ComponentActivity() {
                         MediaItem.fromUri(uri)
                     )
 
-            val exo = ExoPlayer.Builder(context).build()
+            val loadControl = DefaultLoadControl.Builder()
+                .setBufferDurationsMs(
+                    VIDEO_MIN_BUFFER_MS,
+                    VIDEO_MAX_BUFFER_MS,
+                    VIDEO_START_BUFFER_MS,
+                    VIDEO_REBUFFER_BUFFER_MS
+                )
+                .build()
+
+            val exo = ExoPlayer.Builder(context)
+                .setLoadControl(loadControl)
+                .build()
 
             exo.addListener(
                 object : Player.Listener {
@@ -782,28 +801,82 @@ class MainActivity : ComponentActivity() {
         }
 
         LaunchedEffect(player) {
+            var previousSampleTimeMs = SystemClock.elapsedRealtime()
+            var previousBufferedDurationMs =
+                player.totalBufferedDuration.coerceAtLeast(0L)
+            var bufferedMsPerWallMs = 0.0
+            var hasBufferRate = false
+            var lastBufferProgressTimeMs = previousSampleTimeMs
+            var hasStartedPlayback = false
+
             while (true) {
-                val newPlaybackState = player.playbackState
-                val durationMs = player.duration
-                val bufferedPositionMs = player.bufferedPosition
-                val newBufferedPercentage =
-                    if (durationMs > 0L && bufferedPositionMs >= 0L) {
-                        (
-                            bufferedPositionMs.toDouble() /
-                                durationMs.toDouble() * 100.0
-                        ).roundToInt().coerceIn(0, 100)
-                    } else {
-                        null
+                val nowMs = SystemClock.elapsedRealtime()
+                val currentState = player.playbackState
+                val currentBufferedDurationMs =
+                    player.totalBufferedDuration.coerceAtLeast(0L)
+                val elapsedMs = nowMs - previousSampleTimeMs
+                val bufferedDeltaMs =
+                    currentBufferedDurationMs - previousBufferedDurationMs
+
+                if (currentState == Player.STATE_BUFFERING) {
+                    if (bufferedDeltaMs < 0L) {
+                        bufferedMsPerWallMs = 0.0
+                        hasBufferRate = false
+                        lastBufferProgressTimeMs = nowMs
+                    } else if (elapsedMs > 0L && bufferedDeltaMs > 0L) {
+                        val sampleRate =
+                            bufferedDeltaMs.toDouble() / elapsedMs.toDouble()
+                        bufferedMsPerWallMs = if (hasBufferRate) {
+                            bufferedMsPerWallMs * 0.7 + sampleRate * 0.3
+                        } else {
+                            sampleRate
+                        }
+                        hasBufferRate = true
+                        lastBufferProgressTimeMs = nowMs
                     }
 
-                if (playbackState != newPlaybackState) {
-                    playbackState = newPlaybackState
+                    if (nowMs - lastBufferProgressTimeMs > 3_000L) {
+                        hasBufferRate = false
+                    }
+                } else {
+                    hasBufferRate = false
+                    lastBufferProgressTimeMs = nowMs
                 }
 
-                if (bufferedPercentage != newBufferedPercentage) {
-                    bufferedPercentage = newBufferedPercentage
+                if (currentState == Player.STATE_READY && player.playWhenReady) {
+                    hasStartedPlayback = true
                 }
 
+                playbackState = currentState
+                estimatedStartSeconds =
+                    if (currentState != Player.STATE_BUFFERING) {
+                        null
+                    } else {
+                        val targetBufferedMs =
+                            if (hasStartedPlayback) {
+                                VIDEO_REBUFFER_BUFFER_MS.toLong()
+                            } else {
+                                VIDEO_START_BUFFER_MS.toLong()
+                            }
+                        val remainingBufferMs =
+                            (targetBufferedMs - currentBufferedDurationMs)
+                                .coerceAtLeast(0L)
+
+                        when {
+                            remainingBufferMs == 0L -> 0L
+                            hasBufferRate && bufferedMsPerWallMs > 0.0 -> {
+                                ceil(
+                                    remainingBufferMs.toDouble() /
+                                        bufferedMsPerWallMs /
+                                        1_000.0
+                                ).toLong().coerceAtLeast(1L)
+                            }
+                            else -> null
+                        }
+                    }
+
+                previousSampleTimeMs = nowMs
+                previousBufferedDurationMs = currentBufferedDurationMs
                 delay(250)
             }
         }
@@ -842,16 +915,15 @@ class MainActivity : ComponentActivity() {
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    val percent = bufferedPercentage
-                    if (percent == null) {
-                        CircularProgressIndicator()
-                        Text("Buffering…")
-                    } else {
-                        CircularProgressIndicator(
-                            progress = { percent / 100f }
-                        )
-                        Text("Buffering $percent%")
-                    }
+                    CircularProgressIndicator()
+                    val etaSeconds = estimatedStartSeconds
+                    Text(
+                        text = when {
+                            etaSeconds == null -> "Estimating start time…"
+                            etaSeconds <= 0L -> "Starting soon…"
+                            else -> "Starting in about ${etaSeconds}s"
+                        }
+                    )
                 }
             }
 
