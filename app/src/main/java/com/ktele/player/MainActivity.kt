@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.darkColorScheme
@@ -30,6 +31,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -66,6 +68,8 @@ import org.drinkless.tdlib.TdApi
 import java.io.IOException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+
+import kotlinx.coroutines.delay
 
 
 private val kTeleColorScheme = darkColorScheme(
@@ -680,6 +684,14 @@ class MainActivity : ComponentActivity() {
             mutableStateOf("")
         }
 
+        var playbackState by remember(item.fileId) {
+            mutableStateOf(Player.STATE_BUFFERING)
+        }
+
+        var bufferedPercentage by remember(item.fileId) {
+            mutableStateOf(0)
+        }
+
         DisposableEffect(Unit) {
             val actionBar = activity?.actionBar
             val restoreActionBar = actionBar?.isShowing == true
@@ -768,6 +780,24 @@ class MainActivity : ComponentActivity() {
             exo
         }
 
+        LaunchedEffect(player) {
+            while (true) {
+                val newPlaybackState = player.playbackState
+                val newBufferedPercentage =
+                    player.bufferedPercentage.coerceIn(0, 100)
+
+                if (playbackState != newPlaybackState) {
+                    playbackState = newPlaybackState
+                }
+
+                if (bufferedPercentage != newBufferedPercentage) {
+                    bufferedPercentage = newBufferedPercentage
+                }
+
+                delay(250)
+            }
+        }
+
         DisposableEffect(player) {
             onDispose {
                 player.release()
@@ -793,6 +823,21 @@ class MainActivity : ComponentActivity() {
                 },
                 modifier = Modifier.fillMaxSize()
             )
+
+            if (playbackState == Player.STATE_BUFFERING) {
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    CircularProgressIndicator(
+                        progress = { bufferedPercentage / 100f }
+                    )
+                    Text("Buffering $bufferedPercentage%")
+                }
+            }
 
             if (error.isNotEmpty()) {
                 Text(
