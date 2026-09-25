@@ -1,14 +1,18 @@
 package com.ktele.player
 
 import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.os.Bundle
+import android.view.ViewTreeObserver
 
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -33,6 +37,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -59,6 +64,21 @@ import org.drinkless.tdlib.TdApi
 import java.io.IOException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+
+
+private fun Context.findActivity(): Activity? {
+    var current: Context? = this
+
+    while (current != null) {
+        if (current is Activity) {
+            return current
+        }
+
+        current = (current as? ContextWrapper)?.baseContext
+    }
+
+    return null
+}
 
 
 data class VideoItem(
@@ -594,38 +614,70 @@ class MainActivity : ComponentActivity() {
         item: VideoItem
     ) {
         val context = LocalContext.current
-        val activity = context as? Activity
+        val activity = context.findActivity()
 
         var error by remember {
             mutableStateOf("")
         }
 
-        DisposableEffect(Unit) {
-            activity?.requestedOrientation =
-                ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        var fillScreen by remember(item.fileId) {
+            mutableStateOf(true)
+        }
 
-            val controller = activity?.window?.let { window ->
-                WindowCompat.getInsetsController(
+        DisposableEffect(activity) {
+            if (activity == null) {
+                onDispose { }
+            } else {
+                val window = activity.window
+                val decorView = window.decorView
+                val systemBars = WindowInsetsCompat.Type.systemBars()
+                val controller = WindowCompat.getInsetsController(
                     window,
-                    window.decorView
+                    decorView
                 )
-            }
+                var disposed = false
+                val focusListener =
+                    ViewTreeObserver.OnWindowFocusChangeListener { hasFocus ->
+                        if (hasFocus && !disposed) {
+                            controller.hide(systemBars)
+                        }
+                    }
+                val viewTreeObserver = decorView.viewTreeObserver
+                val previousOrientation = activity.requestedOrientation
 
-            controller?.hide(
-                WindowInsetsCompat.Type.systemBars()
-            )
-
-            controller?.systemBarsBehavior =
-                WindowInsetsControllerCompat
-                    .BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-
-            onDispose {
-                controller?.show(
-                    WindowInsetsCompat.Type.systemBars()
+                WindowCompat.setDecorFitsSystemWindows(window, false)
+                controller.systemBarsBehavior =
+                    WindowInsetsControllerCompat
+                        .BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                activity.requestedOrientation =
+                    ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                viewTreeObserver.addOnWindowFocusChangeListener(
+                    focusListener
                 )
+                decorView.post {
+                    if (!disposed) {
+                        controller.hide(systemBars)
+                    }
+                }
 
-                activity?.requestedOrientation =
-                    ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                onDispose {
+                    disposed = true
+
+                    if (viewTreeObserver.isAlive) {
+                        viewTreeObserver
+                            .removeOnWindowFocusChangeListener(
+                                focusListener
+                            )
+                    }
+
+                    activity.requestedOrientation =
+                        previousOrientation
+                    WindowCompat.setDecorFitsSystemWindows(
+                        window,
+                        true
+                    )
+                    controller.show(systemBars)
+                }
             }
         }
 
@@ -691,7 +743,9 @@ class MainActivity : ComponentActivity() {
         }
 
         Box(
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
         ) {
             AndroidView(
                 factory = { viewContext ->
@@ -700,10 +754,17 @@ class MainActivity : ComponentActivity() {
                         keepScreenOn = true
                         useController = true
                         resizeMode =
-                            AspectRatioFrameLayout.RESIZE_MODE_FIT
+                            AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                     }
                 },
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxSize(),
+                update = { view ->
+                    view.resizeMode = if (fillScreen) {
+                        AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                    } else {
+                        AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    }
+                }
             )
 
             Button(
@@ -715,6 +776,17 @@ class MainActivity : ComponentActivity() {
                     .padding(16.dp)
             ) {
                 Text("Back")
+            }
+
+            Button(
+                onClick = {
+                    fillScreen = !fillScreen
+                },
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(16.dp)
+            ) {
+                Text(if (fillScreen) "Fit" else "Fill")
             }
 
             if (error.isNotEmpty()) {
@@ -730,55 +802,145 @@ class MainActivity : ComponentActivity() {
 
 
     @Composable
-    private fun ListScreen() {
-        var input by remember {
-            mutableStateOf("")
-        }
-
-        BackHandler(enabled = openChatId != null) {
-            openChatId = null
-        }
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(24.dp),
-            verticalArrangement = if (stage == "ready") {
-                Arrangement.Top
-            } else {
-                Arrangement.Center
+        private fun ListScreen() {
+            var input by remember {
+                mutableStateOf("")
             }
-        ) {
-            Text(
-                text = "K-Tele Player",
-                style = MaterialTheme.typography.headlineMedium
-            )
 
-            Spacer(
-                modifier = Modifier.height(24.dp)
-            )
+            BackHandler(enabled = openChatId != null) {
+                openChatId = null
+            }
 
-            when (stage) {
-                "starting" -> {
-                    Text("Starting Telegram...")
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp),
+                verticalArrangement = if (stage == "ready") {
+                    Arrangement.Top
+                } else {
+                    Arrangement.Center
                 }
+            ) {
+                Text(
+                    text = "K-Tele Player",
+                    style = MaterialTheme.typography.headlineMedium
+                )
 
-                "error" -> {
-                    Text("Something went wrong")
-                }
+                Spacer(
+                    modifier = Modifier.height(24.dp)
+                )
 
-                "ready" -> {
-                    val current = openChatId
+                when (stage) {
+                    "starting" -> {
+                        Text("Starting Telegram...")
+                    }
 
-                    if (current == null) {
-                        Text(
-                            text = "Your chats",
-                            style = MaterialTheme.typography.titleMedium
+                    "error" -> {
+                        Text("Something went wrong")
+                    }
+
+                    "ready" -> {
+                        val current = openChatId
+
+                        if (current == null) {
+                            Text(
+                                text = "Your chats",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+
+                            LazyColumn(
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                items(chatIds) { id ->
+                                    Text(
+                                        text = chatTitles[id] ?: "...",
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { openChat(id) }
+                                            .padding(vertical = 12.dp)
+                                    )
+                                }
+                            }
+                        } else {
+                            Button(
+                                onClick = { openChatId = null }
+                            ) {
+                                Text("Back")
+                            }
+
+                            Spacer(
+                                modifier = Modifier.height(12.dp)
+                            )
+
+                            Text(
+                                text = chatTitles[current] ?: "",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+
+                            Spacer(
+                                modifier = Modifier.height(12.dp)
+                            )
+
+                            if (videos.isEmpty()) {
+                                Text("Loading videos... (or none found)")
+                            }
+
+                            LazyColumn(
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                items(videos) { video ->
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { playing = video }
+                                            .padding(vertical = 10.dp)
+                                    ) {
+                                        Text(video.title)
+                                        Text(
+                                            video.info,
+                                            style = MaterialTheme.typography.bodySmall
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    else -> {
+                        val label = when (stage) {
+                            "phone" -> "Phone number (with country code, e.g. +91...)"
+                            "code" -> "Login code from Telegram"
+                            else -> "Two-step verification password"
+                        }
+
+                        OutlinedTextField(
+                            value = input,
+                            onValueChange = { input = it },
+                            label = { Text(label) },
+                            modifier = Modifier.fillMaxWidth()
                         )
 
-                        LazyColumn(
-                            modifier = Modifier.weight(1f)
+                        Spacer(
+                            modifier = Modifier.height(16.dp)
+                        )
+
+                        Button(
+                            onClick = {
+                                submit(input)
+                                input = ""
+                            }
                         ) {
-                            items(chatIds) { id ->
-                                Text(
-                                    text = c
+                            Text("Next")
+                        }
+                    }
+                }
+
+                if (message.isNotEmpty()) {
+                    Spacer(
+                        modifier = Modifier.height(16.dp)
+                    )
+                    Text(message)
+                }
+            }
+        }
+    }
