@@ -1,14 +1,18 @@
 package com.ktele.player
 
 import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.os.Bundle
+import android.view.ViewTreeObserver
 
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -33,6 +37,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -59,6 +64,21 @@ import org.drinkless.tdlib.TdApi
 import java.io.IOException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+
+
+private fun Context.findActivity(): Activity? {
+    var current: Context? = this
+
+    while (current != null) {
+        if (current is Activity) {
+            return current
+        }
+
+        current = (current as? ContextWrapper)?.baseContext
+    }
+
+    return null
+}
 
 
 data class VideoItem(
@@ -594,7 +614,7 @@ class MainActivity : ComponentActivity() {
         item: VideoItem
     ) {
         val context = LocalContext.current
-        val activity = context as? Activity
+        val activity = context.findActivity()
 
         var error by remember {
             mutableStateOf("")
@@ -604,32 +624,60 @@ class MainActivity : ComponentActivity() {
             mutableStateOf(true)
         }
 
-        DisposableEffect(Unit) {
-            activity?.requestedOrientation =
-                ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-
-            val controller = activity?.window?.let { window ->
-                WindowCompat.getInsetsController(
+        DisposableEffect(activity) {
+            if (activity == null) {
+                onDispose { }
+            } else {
+                val window = activity.window
+                val decorView = window.decorView
+                val systemBars = WindowInsetsCompat.Type.systemBars()
+                val controller = WindowCompat.getInsetsController(
                     window,
-                    window.decorView
+                    decorView
                 )
-            }
+                var disposed = false
+                val focusListener =
+                    ViewTreeObserver.OnWindowFocusChangeListener { hasFocus ->
+                        if (hasFocus && !disposed) {
+                            controller.hide(systemBars)
+                        }
+                    }
+                val viewTreeObserver = decorView.viewTreeObserver
+                val previousOrientation = activity.requestedOrientation
 
-            controller?.hide(
-                WindowInsetsCompat.Type.systemBars()
-            )
-
-            controller?.systemBarsBehavior =
-                WindowInsetsControllerCompat
-                    .BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-
-            onDispose {
-                controller?.show(
-                    WindowInsetsCompat.Type.systemBars()
+                WindowCompat.setDecorFitsSystemWindows(window, false)
+                controller.systemBarsBehavior =
+                    WindowInsetsControllerCompat
+                        .BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                activity.requestedOrientation =
+                    ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                viewTreeObserver.addOnWindowFocusChangeListener(
+                    focusListener
                 )
+                decorView.post {
+                    if (!disposed) {
+                        controller.hide(systemBars)
+                    }
+                }
 
-                activity?.requestedOrientation =
-                    ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                onDispose {
+                    disposed = true
+
+                    if (viewTreeObserver.isAlive) {
+                        viewTreeObserver
+                            .removeOnWindowFocusChangeListener(
+                                focusListener
+                            )
+                    }
+
+                    activity.requestedOrientation =
+                        previousOrientation
+                    WindowCompat.setDecorFitsSystemWindows(
+                        window,
+                        true
+                    )
+                    controller.show(systemBars)
+                }
             }
         }
 
@@ -695,7 +743,9 @@ class MainActivity : ComponentActivity() {
         }
 
         Box(
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
         ) {
             AndroidView(
                 factory = { viewContext ->
