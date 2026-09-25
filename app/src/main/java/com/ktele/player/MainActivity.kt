@@ -98,6 +98,10 @@ data class VideoItem(
     val size: Long
 )
 
+// Fetch only small on-demand ranges; playback reads each range incrementally.
+private const val TELEGRAM_STREAM_CHUNK_BYTES = 1024L * 1024L
+private const val TELEGRAM_STREAM_READ_BYTES = 256L * 1024L
+
 
 class TdFileDataSource(
     private val fetch: (TdApi.Function<*>) -> TdApi.Object?,
@@ -144,36 +148,45 @@ class TdFileDataSource(
             return C.RESULT_END_OF_INPUT
         }
 
-        val want = minOf(
+        val requested = minOf(
             length.toLong(),
-            262144L,
+            TELEGRAM_STREAM_READ_BYTES,
             fileSize - position
         )
 
-        if (
-            position < windowStart ||
-            position + want > windowEnd
-        ) {
+        val chunkStart =
+            (position / TELEGRAM_STREAM_CHUNK_BYTES) * TELEGRAM_STREAM_CHUNK_BYTES
+        val chunkEnd = minOf(
+            fileSize,
+            chunkStart + TELEGRAM_STREAM_CHUNK_BYTES
+        )
+
+        if (position < windowStart || position >= windowEnd) {
             val download = TdApi.DownloadFile()
 
             download.fileId = fileId
             download.priority = 32
-            download.offset = position
-            download.limit = 8L * 1024L * 1024L
+            download.offset = chunkStart
+            download.limit = chunkEnd - chunkStart
             download.synchronous = true
 
             val result = fetch(download)
 
             if (result == null) {
-                throw IOException("Telegram download timeout")
+                throw IOException("Telegram stream chunk timeout")
             }
 
             if (result is TdApi.Error) {
                 throw IOException("Telegram: ${result.message}")
             }
 
-            windowStart = position
-            windowEnd = position + download.limit
+            windowStart = chunkStart
+            windowEnd = chunkEnd
+        }
+
+        val want = minOf(requested, windowEnd - position)
+        if (want <= 0L) {
+            throw IOException("No stream data available at offset $position")
         }
 
         val readPart = TdApi.ReadFilePart()
