@@ -654,10 +654,6 @@ class MainActivity : ComponentActivity() {
             mutableStateOf("")
         }
 
-        var fillScreen by remember(item.fileId) {
-            mutableStateOf(true)
-        }
-
         DisposableEffect(Unit) {
             val actionBar = activity?.actionBar
             val restoreActionBar = actionBar?.isShowing == true
@@ -769,37 +765,8 @@ class MainActivity : ComponentActivity() {
                             AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                     }
                 },
-                modifier = Modifier.fillMaxSize(),
-                update = { view ->
-                    view.resizeMode = if (fillScreen) {
-                        AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                    } else {
-                        AspectRatioFrameLayout.RESIZE_MODE_FIT
-                    }
-                }
+                modifier = Modifier.fillMaxSize()
             )
-
-            Button(
-                onClick = {
-                    playing = null
-                },
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(16.dp)
-            ) {
-                Text("Back")
-            }
-
-            Button(
-                onClick = {
-                    fillScreen = !fillScreen
-                },
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(16.dp)
-            ) {
-                Text(if (fillScreen) "Fit" else "Fill")
-            }
 
             if (error.isNotEmpty()) {
                 Text(
