@@ -1057,9 +1057,9 @@ class MainActivity : ComponentActivity() {
                     val etaSeconds = estimatedStartSeconds
                     Text(
                         text = when {
-                            etaSeconds == null -> "Estimating start time…"
-                            etaSeconds <= 0L -> "Starting soon…"
-                            else -> "Starting in about ${etaSeconds}s"
+                            etaSeconds == null -> "Loading time: calculating…"
+                            etaSeconds <= 0L -> "Loading time: 0 seconds"
+                            else -> "Loading time: ${etaSeconds} seconds"
                         }
                     )
                 }
