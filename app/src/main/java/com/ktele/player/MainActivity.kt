@@ -1,6 +1,8 @@
 package com.ktele.player
 
 import android.app.Activity
+import android.content.Context
+import android.graphics.Color as AndroidColor
 import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.os.Bundle
@@ -27,6 +29,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -38,6 +41,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -62,6 +66,7 @@ import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 
 import org.drinkless.tdlib.Client
@@ -73,6 +78,34 @@ import java.util.concurrent.TimeUnit
 
 import kotlinx.coroutines.delay
 import kotlin.math.ceil
+
+
+private const val SUBTITLE_PREFERENCES = "subtitle_preferences"
+private const val SUBTITLE_COLOR_KEY = "subtitle_color"
+private const val DEFAULT_SUBTITLE_COLOR_ID = "white"
+
+private data class SubtitleColorPreset(
+    val id: String,
+    val label: String,
+    val color: Long
+)
+
+private val subtitleColorPresets = listOf(
+    SubtitleColorPreset("white", "White", 0xFFFFFFFF),
+    SubtitleColorPreset("yellow", "Yellow", 0xFFFFD54F),
+    SubtitleColorPreset("cyan", "Cyan", 0xFF4DD0E1),
+    SubtitleColorPreset("green", "Green", 0xFF8BC34A)
+)
+
+private fun subtitleCaptionStyle(foregroundColor: Int) =
+    CaptionStyleCompat(
+        foregroundColor,
+        AndroidColor.TRANSPARENT,
+        AndroidColor.TRANSPARENT,
+        CaptionStyleCompat.EDGE_TYPE_OUTLINE,
+        AndroidColor.BLACK,
+        null
+    )
 
 
 private val kTeleColorScheme = darkColorScheme(
@@ -687,6 +720,26 @@ class MainActivity : ComponentActivity() {
         item: VideoItem
     ) {
         val context = LocalContext.current
+        val preferences = remember(context) {
+            context.getSharedPreferences(
+                SUBTITLE_PREFERENCES,
+                Context.MODE_PRIVATE
+            )
+        }
+        var subtitleColorId by remember(preferences) {
+            mutableStateOf(
+                preferences.getString(
+                    SUBTITLE_COLOR_KEY,
+                    DEFAULT_SUBTITLE_COLOR_ID
+                ) ?: DEFAULT_SUBTITLE_COLOR_ID
+            )
+        }
+        var showSubtitleColorOptions by remember {
+            mutableStateOf(false)
+        }
+        val selectedSubtitlePreset = subtitleColorPresets.firstOrNull {
+            it.id == subtitleColorId
+        } ?: subtitleColorPresets.first()
         val activity = context as? Activity
 
         var error by remember {
@@ -898,14 +951,74 @@ class MainActivity : ComponentActivity() {
                 factory = { viewContext ->
                     PlayerView(viewContext).apply {
                         this.player = player
+                        subtitleView?.setStyle(
+                            subtitleCaptionStyle(selectedSubtitlePreset.color.toInt())
+                        )
                         keepScreenOn = true
                         useController = true
                         resizeMode =
                             AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                     }
                 },
+                update = { playerView ->
+                    playerView.subtitleView?.setStyle(
+                        subtitleCaptionStyle(selectedSubtitlePreset.color.toInt())
+                    )
+                },
                 modifier = Modifier.fillMaxSize()
             )
+
+            Column(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(16.dp),
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = {
+                        showSubtitleColorOptions = !showSubtitleColorOptions
+                    }
+                ) {
+                    Text("Subtitle: ${selectedSubtitlePreset.label}")
+                }
+
+                if (showSubtitleColorOptions) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+                        shape = RoundedCornerShape(12.dp),
+                        tonalElevation = 6.dp
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Text("Subtitle color")
+                            subtitleColorPresets.forEach { preset ->
+                                TextButton(
+                                    onClick = {
+                                        subtitleColorId = preset.id
+                                        preferences.edit()
+                                            .putString(SUBTITLE_COLOR_KEY, preset.id)
+                                            .apply()
+                                        showSubtitleColorOptions = false
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        text = if (preset.id == subtitleColorId) {
+                                            "✓ ${preset.label}"
+                                        } else {
+                                            preset.label
+                                        },
+                                        color = Color(preset.color)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
 
             if (playbackState == Player.STATE_BUFFERING) {
                 Column(
