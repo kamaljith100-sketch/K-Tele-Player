@@ -146,6 +146,11 @@ private const val VIDEO_MAX_BUFFER_MS = 50_000
 private const val VIDEO_START_BUFFER_MS = 1_000
 private const val VIDEO_REBUFFER_BUFFER_MS = 2_000
 
+private fun formatLoadingDuration(durationMs: Long): String {
+    val totalTenths = (durationMs.coerceAtLeast(0L) + 50L) / 100L
+    return "${totalTenths / 10L}.${totalTenths % 10L} s"
+}
+
 // Fetch only small on-demand ranges; playback reads each range incrementally.
 private const val TELEGRAM_STREAM_CHUNK_BYTES = 1024L * 1024L
 private const val TELEGRAM_STREAM_READ_BYTES = 256L * 1024L
@@ -760,6 +765,14 @@ class MainActivity : ComponentActivity() {
             mutableStateOf<Long?>(null)
         }
 
+        var loadingElapsedMs by remember(item.fileId) {
+            mutableStateOf(0L)
+        }
+
+        var lastLoadingDurationMs by remember(item.fileId) {
+            mutableStateOf<Long?>(null)
+        }
+
         DisposableEffect(Unit) {
             val actionBar = activity?.actionBar
             val restoreActionBar = actionBar?.isShowing == true
@@ -873,6 +886,7 @@ class MainActivity : ComponentActivity() {
         }
 
         LaunchedEffect(player) {
+            var bufferingStartedAtMs: Long? = null
             var previousSampleTimeMs = SystemClock.elapsedRealtime()
             var previousBufferedDurationMs =
                 player.totalBufferedDuration.coerceAtLeast(0L)
@@ -884,6 +898,24 @@ class MainActivity : ComponentActivity() {
             while (true) {
                 val nowMs = SystemClock.elapsedRealtime()
                 val currentState = player.playbackState
+                if (currentState == Player.STATE_BUFFERING) {
+                    if (bufferingStartedAtMs == null) {
+                        bufferingStartedAtMs = nowMs
+                        loadingElapsedMs = 0L
+                        lastLoadingDurationMs = null
+                    }
+                    loadingElapsedMs = nowMs - (bufferingStartedAtMs ?: nowMs)
+                } else {
+                    bufferingStartedAtMs?.let { startedAtMs ->
+                        val durationMs = (nowMs - startedAtMs).coerceAtLeast(0L)
+                        loadingElapsedMs = durationMs
+                        if (currentState == Player.STATE_READY) {
+                            lastLoadingDurationMs = durationMs
+                        }
+                        bufferingStartedAtMs = null
+                    }
+                }
+
                 val currentBufferedDurationMs =
                     player.totalBufferedDuration.coerceAtLeast(0L)
                 val elapsedMs = nowMs - previousSampleTimeMs
@@ -954,6 +986,13 @@ class MainActivity : ComponentActivity() {
                 previousSampleTimeMs = nowMs
                 previousBufferedDurationMs = currentBufferedDurationMs
                 delay(250)
+            }
+        }
+
+        LaunchedEffect(lastLoadingDurationMs) {
+            if (lastLoadingDurationMs != null) {
+                delay(3_000L)
+                lastLoadingDurationMs = null
             }
         }
 
@@ -1054,13 +1093,31 @@ class MainActivity : ComponentActivity() {
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     CircularProgressIndicator()
+                    Text(
+                        text = "Loading time: ${formatLoadingDuration(loadingElapsedMs)}",
+                        color = Color.Red,
+                        style = MaterialTheme.typography.titleMedium
+                    )
                     val etaSeconds = estimatedStartSeconds
                     Text(
                         text = when {
-                            etaSeconds == null -> "Loading time: calculating…"
-                            etaSeconds <= 0L -> "Loading time: 0 seconds"
-                            else -> "Loading time: ${etaSeconds} seconds"
+                            etaSeconds == null -> "Remaining: calculating…"
+                            etaSeconds <= 0L -> "Starting playback…"
+                            else -> "Remaining: ${etaSeconds} seconds"
                         }
+                    )
+                }
+            }
+
+            if (playbackState == Player.STATE_READY) {
+                lastLoadingDurationMs?.let { durationMs ->
+                    Text(
+                        text = "Loaded in ${formatLoadingDuration(durationMs)}",
+                        color = Color.Red,
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(24.dp)
                     )
                 }
             }
