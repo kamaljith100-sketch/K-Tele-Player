@@ -79,6 +79,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 import kotlinx.coroutines.delay
+import kotlin.math.ceil
 
 
 private const val SUBTITLE_PREFERENCES = "subtitle_preferences"
@@ -144,11 +145,6 @@ private const val VIDEO_MIN_BUFFER_MS = 50_000
 private const val VIDEO_MAX_BUFFER_MS = 50_000
 private const val VIDEO_START_BUFFER_MS = 1_000
 private const val VIDEO_REBUFFER_BUFFER_MS = 2_000
-
-private fun formatLoadingDuration(durationMs: Long): String {
-    val totalTenths = (durationMs.coerceAtLeast(0L) + 50L) / 100L
-    return "${totalTenths / 10L}.${totalTenths % 10L} s"
-}
 
 // Fetch only small on-demand ranges; playback reads each range incrementally.
 private const val TELEGRAM_STREAM_CHUNK_BYTES = 1024L * 1024L
@@ -760,13 +756,7 @@ class MainActivity : ComponentActivity() {
             mutableStateOf(false)
         }
 
-        val loadingStartedAtMs = remember(item.fileId) {
-            SystemClock.elapsedRealtime()
-        }
-        var startupElapsedMs by remember(item.fileId) {
-            mutableStateOf(0L)
-        }
-        var startupDurationMs by remember(item.fileId) {
+        var estimatedStartSeconds by remember(item.fileId) {
             mutableStateOf<Long?>(null)
         }
 
@@ -882,37 +872,88 @@ class MainActivity : ComponentActivity() {
             exo
         }
 
-        LaunchedEffect(player, loadingStartedAtMs) {
-            var hasCapturedStartup = false
+        LaunchedEffect(player) {
+            var previousSampleTimeMs = SystemClock.elapsedRealtime()
+            var previousBufferedDurationMs =
+                player.totalBufferedDuration.coerceAtLeast(0L)
+            var bufferedMsPerWallMs = 0.0
+            var hasBufferRate = false
+            var lastBufferProgressTimeMs = previousSampleTimeMs
+            var hasStartedPlayback = false
 
             while (true) {
                 val nowMs = SystemClock.elapsedRealtime()
                 val currentState = player.playbackState
-                val currentlyPlaying = player.isPlaying
+                val currentBufferedDurationMs =
+                    player.totalBufferedDuration.coerceAtLeast(0L)
+                val elapsedMs = nowMs - previousSampleTimeMs
+                val bufferedDeltaMs =
+                    currentBufferedDurationMs - previousBufferedDurationMs
 
-                if (!hasCapturedStartup) {
-                    startupElapsedMs =
-                        (nowMs - loadingStartedAtMs).coerceAtLeast(0L)
-                    if (currentlyPlaying) {
-                        startupDurationMs = startupElapsedMs
-                        hasCapturedStartup = true
+                if (currentState == Player.STATE_BUFFERING) {
+                    if (bufferedDeltaMs < 0L) {
+                        bufferedMsPerWallMs = 0.0
+                        hasBufferRate = false
+                        lastBufferProgressTimeMs = nowMs
+                    } else if (elapsedMs > 0L && bufferedDeltaMs > 0L) {
+                        val sampleRate =
+                            bufferedDeltaMs.toDouble() / elapsedMs.toDouble()
+                        bufferedMsPerWallMs = if (hasBufferRate) {
+                            bufferedMsPerWallMs * 0.7 + sampleRate * 0.3
+                        } else {
+                            sampleRate
+                        }
+                        hasBufferRate = true
+                        lastBufferProgressTimeMs = nowMs
                     }
+
+                    if (nowMs - lastBufferProgressTimeMs > 3_000L) {
+                        hasBufferRate = false
+                    }
+                } else {
+                    hasBufferRate = false
+                    lastBufferProgressTimeMs = nowMs
+                }
+
+                if (currentState == Player.STATE_READY && player.playWhenReady) {
+                    hasStartedPlayback = true
                 }
 
                 playbackState = currentState
-                isVideoPlaying = currentlyPlaying
+                isVideoPlaying = player.isPlaying
                 if (isVideoPlaying) {
                     showSubtitleColorOptions = false
                 }
+                estimatedStartSeconds =
+                    if (currentState != Player.STATE_BUFFERING) {
+                        null
+                    } else {
+                        val targetBufferedMs =
+                            if (hasStartedPlayback) {
+                                VIDEO_REBUFFER_BUFFER_MS.toLong()
+                            } else {
+                                VIDEO_START_BUFFER_MS.toLong()
+                            }
+                        val remainingBufferMs =
+                            (targetBufferedMs - currentBufferedDurationMs)
+                                .coerceAtLeast(0L)
 
-                delay(100)
-            }
-        }
+                        when {
+                            remainingBufferMs == 0L -> 0L
+                            hasBufferRate && bufferedMsPerWallMs > 0.0 -> {
+                                ceil(
+                                    remainingBufferMs.toDouble() /
+                                        bufferedMsPerWallMs /
+                                        1_000.0
+                                ).toLong().coerceAtLeast(1L)
+                            }
+                            else -> null
+                        }
+                    }
 
-        LaunchedEffect(startupDurationMs) {
-            if (startupDurationMs != null) {
-                delay(3_000L)
-                startupDurationMs = null
+                previousSampleTimeMs = nowMs
+                previousBufferedDurationMs = currentBufferedDurationMs
+                delay(250)
             }
         }
 
@@ -1014,22 +1055,14 @@ class MainActivity : ComponentActivity() {
                 ) {
                     CircularProgressIndicator()
                     Text(
-                        text = "Startup time: ${formatLoadingDuration(startupElapsedMs)}",
-                        color = Color.Red,
-                        style = MaterialTheme.typography.titleMedium
+                        text = "Starting in",
+                        style = MaterialTheme.typography.bodyLarge
                     )
-                }
-            }
-
-            if (playbackState == Player.STATE_READY) {
-                startupDurationMs?.let { durationMs ->
+                    val etaSeconds = estimatedStartSeconds
                     Text(
-                        text = "Video started in ${formatLoadingDuration(durationMs)}",
+                        text = etaSeconds?.let { "${it}s" } ?: "…",
                         color = Color.Red,
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(24.dp)
+                        style = MaterialTheme.typography.headlineMedium
                     )
                 }
             }
