@@ -254,6 +254,9 @@ class MainActivity : ComponentActivity() {
     private val chatTitles =
         mutableStateMapOf<Long, String>()
 
+    private val chatPinnedInMainList =
+        mutableStateMapOf<Long, Boolean>()
+
     private var openChatId by mutableStateOf<Long?>(null)
 
     private var videos by mutableStateOf(
@@ -449,6 +452,11 @@ class MainActivity : ComponentActivity() {
                                 if (chatResult is TdApi.Chat) {
                                     chatTitles[chatResult.id] =
                                         chatResult.title
+                                    chatPinnedInMainList[chatResult.id] =
+                                        chatResult.positions.any { position ->
+                                            position.list is TdApi.ChatListMain &&
+                                                position.isPinned
+                                        }
                                 }
                             }
                         )
@@ -838,10 +846,14 @@ class MainActivity : ComponentActivity() {
                                 style = MaterialTheme.typography.titleMedium
                             )
 
+                            val orderedChatIds =
+                                chatIds.filter { chatPinnedInMainList[it] == true } +
+                                    chatIds.filter { chatPinnedInMainList[it] != true }
+
                             LazyColumn(
                                 modifier = Modifier.weight(1f)
                             ) {
-                                items(chatIds) { id ->
+                                items(orderedChatIds) { id ->
                                     Text(
                                         text = chatTitles[id] ?: "...",
                                         modifier = Modifier
