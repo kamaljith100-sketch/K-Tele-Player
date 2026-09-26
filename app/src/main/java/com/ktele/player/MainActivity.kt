@@ -2,6 +2,7 @@ package com.ktele.player
 
 import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.graphics.Color as AndroidColor
 import android.content.pm.ActivityInfo
 import android.net.Uri
@@ -1630,6 +1631,45 @@ class MainActivity : ComponentActivity() {
         var urlText by remember { mutableStateOf(initialUrl) }
         var browserView by remember { mutableStateOf<WebView?>(null) }
 
+        fun handleSpecialUrl(rawUrl: String, view: WebView?): Boolean {
+            val trimmed = rawUrl.trim()
+            if (
+                trimmed.startsWith("http://", ignoreCase = true) ||
+                trimmed.startsWith("https://", ignoreCase = true)
+            ) {
+                return false
+            }
+
+            return try {
+                val intent = if (trimmed.startsWith("intent://", ignoreCase = true)) {
+                    Intent.parseUri(trimmed, Intent.URI_INTENT_SCHEME)
+                } else {
+                    Intent(Intent.ACTION_VIEW, Uri.parse(trimmed))
+                }
+                val fallbackUrl = intent
+                    .getStringExtra("browser_fallback_url")
+                    ?.let { Uri.decode(it).replace("&amp;", "&") }
+                val canOpenExternally = intent.resolveActivity(packageManager) != null
+
+                if (canOpenExternally) {
+                    startActivity(intent)
+                    true
+                } else if (
+                    !fallbackUrl.isNullOrBlank() &&
+                    (fallbackUrl.startsWith("http://", ignoreCase = true) ||
+                        fallbackUrl.startsWith("https://", ignoreCase = true))
+                ) {
+                    urlText = fallbackUrl
+                    view?.loadUrl(fallbackUrl)
+                    true
+                } else {
+                    true
+                }
+            } catch (_: Exception) {
+                true
+            }
+        }
+
         fun openUrl(rawUrl: String, view: WebView?) {
             val trimmed = rawUrl.trim()
             if (trimmed.isEmpty()) {
@@ -1638,6 +1678,10 @@ class MainActivity : ComponentActivity() {
 
             if (normalizeTorrentSource(trimmed) != null) {
                 showTorrentSource(trimmed)
+                return
+            }
+
+            if (handleSpecialUrl(trimmed, view)) {
                 return
             }
 
@@ -1653,7 +1697,6 @@ class MainActivity : ComponentActivity() {
             urlText = target
             view?.loadUrl(target)
         }
-
         BackHandler {
             val view = browserView
             if (view?.canGoBack() == true) {
@@ -1759,6 +1802,9 @@ class MainActivity : ComponentActivity() {
                                     showTorrentSource(url)
                                     return true
                                 }
+                                if (handleSpecialUrl(url, view)) {
+                                    return true
+                                }
                                 return false
                             }
 
@@ -1769,6 +1815,9 @@ class MainActivity : ComponentActivity() {
                             ): Boolean {
                                 if (normalizeTorrentSource(url) != null) {
                                     showTorrentSource(url)
+                                    return true
+                                }
+                                if (handleSpecialUrl(url, view)) {
                                     return true
                                 }
                                 return false
