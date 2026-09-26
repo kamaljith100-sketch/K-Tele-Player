@@ -11,6 +11,7 @@ import android.os.SystemClock
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 
@@ -90,6 +91,7 @@ import com.github.se_bastiaan.torrentstream.TorrentOptions
 import com.github.se_bastiaan.torrentstream.TorrentStream
 import com.github.se_bastiaan.torrentstream.listeners.TorrentListener
 
+import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
@@ -420,6 +422,88 @@ private const val TORRENT_LINK_HOOK = """
             if (window.KTeleTorrent) window.KTeleTorrent.openTorrent(link);
         }
     }, true);
+})();
+"""
+
+private val BLOCKED_AD_HOST_MARKERS = listOf(
+    "doubleclick.net",
+    "googlesyndication.com",
+    "googleadservices.com",
+    "adservice.google.com",
+    "adsystem.com",
+    "adnxs.com",
+    "amazon-adsystem.com",
+    "popads.net",
+    "popcash.net",
+    "propellerads.com",
+    "exoclick.com",
+    "onclickads.net",
+    "trafficjunky.com"
+)
+
+private val BLOCKED_AD_PATH_MARKERS = listOf(
+    "/adserver",
+    "/adservice",
+    "/ads/",
+    "/banner",
+    "/popunder",
+    "doubleclick",
+    "googlesyndication",
+    "googleadservices"
+)
+
+private fun isBlockedAdRequest(rawUrl: String): Boolean {
+    val parsed = runCatching { Uri.parse(rawUrl) }.getOrNull() ?: return false
+    val host = parsed.host?.lowercase() ?: return false
+    val lowerUrl = rawUrl.lowercase()
+    return BLOCKED_AD_HOST_MARKERS.any { host == it || host.endsWith(".$it") } ||
+        BLOCKED_AD_PATH_MARKERS.any { lowerUrl.contains(it) }
+}
+
+private const val AD_CLEANUP_HOOK = """
+(function() {
+    if (window.__kteleAdCleanupInstalled) return;
+    window.__kteleAdCleanupInstalled = true;
+
+    var markerPattern = /(^|[-_])(?:ad|ads|advert|advertisement|banner|popunder|sponsor)(?:$|[-_])/i;
+    var urlPattern = /(doubleclick|googlesyndication|googleadservices|adservice|adsystem|adnxs|popads|popcash|propellerads|exoclick|onclickads|trafficjunky)/i;
+
+    function hideIfAd(node) {
+        if (!(node instanceof Element)) return;
+        var id = node.id || '';
+        var className = typeof node.className === 'string' ? node.className : '';
+        var source = node.getAttribute('src') || node.getAttribute('data-src') || '';
+        var markerText = id + ' ' + className;
+        var hasAdMarker = markerPattern.test(markerText) || urlPattern.test(source);
+        var tagIsAdMedia = /^(IFRAME|INS|SCRIPT)$/.test(node.tagName) && (hasAdMarker || urlPattern.test(source));
+        var style = window.getComputedStyle(node);
+        var rect = node.getBoundingClientRect();
+        var floating = (style.position === 'fixed' || style.position === 'absolute') && Number(style.zIndex || 0) > 10;
+        var centered = rect.width > 180 && rect.height > 60 && rect.top > 70 && rect.bottom < window.innerHeight - 60;
+        var floatingMedia = floating && centered && (
+            /^(IFRAME|INS|IMG)$/.test(node.tagName) ||
+            !!node.querySelector('iframe, ins, img')
+        );
+
+        if (hasAdMarker || tagIsAdMedia || floatingMedia) {
+            node.style.setProperty('display', 'none', 'important');
+        }
+    }
+
+    function cleanAds(root) {
+        if (!root || !root.querySelectorAll) return;
+        hideIfAd(root);
+        root.querySelectorAll('iframe, ins, img, script, [id], [class]').forEach(hideIfAd);
+    }
+
+    cleanAds(document.documentElement);
+    new MutationObserver(function(records) {
+        records.forEach(function(record) {
+            record.addedNodes.forEach(function(node) {
+                if (node.nodeType === 1) cleanAds(node);
+            });
+        });
+    }).observe(document.documentElement, { childList: true, subtree: true });
 })();
 """
 
@@ -1778,6 +1862,8 @@ class MainActivity : ComponentActivity() {
                 factory = { viewContext ->
                     WebView(viewContext).apply {
                         settings.javaScriptEnabled = true
+                        settings.javaScriptCanOpenWindowsAutomatically = false
+                        settings.setSupportMultipleWindows(false)
                         settings.domStorageEnabled = true
                         settings.loadWithOverviewMode = true
                         settings.useWideViewPort = true
@@ -1826,12 +1912,34 @@ class MainActivity : ComponentActivity() {
                             override fun shouldInterceptRequest(
                                 view: WebView,
                                 request: WebResourceRequest
-                            ): android.webkit.WebResourceResponse? {
+                            ): WebResourceResponse? {
                                 val url = request.url.toString()
+                                if (isBlockedAdRequest(url)) {
+                                    return WebResourceResponse(
+                                        "text/plain",
+                                        "UTF-8",
+                                        ByteArrayInputStream(ByteArray(0))
+                                    )
+                                }
                                 if (normalizeTorrentSource(url) != null) {
                                     runOnUiThread { showTorrentSource(url) }
                                 }
                                 return super.shouldInterceptRequest(view, request)
+                            }
+
+                            @Suppress("DEPRECATION")
+                            override fun shouldInterceptRequest(
+                                view: WebView,
+                                url: String
+                            ): WebResourceResponse? {
+                                if (isBlockedAdRequest(url)) {
+                                    return WebResourceResponse(
+                                        "text/plain",
+                                        "UTF-8",
+                                        ByteArrayInputStream(ByteArray(0))
+                                    )
+                                }
+                                return super.shouldInterceptRequest(view, url)
                             }
 
                             override fun onPageFinished(
@@ -1840,6 +1948,7 @@ class MainActivity : ComponentActivity() {
                             ) {
                                 urlText = url
                                 view.evaluateJavascript(TORRENT_LINK_HOOK, null)
+                                view.evaluateJavascript(AD_CLEANUP_HOOK, null)
                             }
                         }
                         loadUrl(initialUrl)
