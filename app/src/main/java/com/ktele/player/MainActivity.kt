@@ -164,14 +164,14 @@ data class VideoItem(
 )
 
 // Keep player startup and rebuffer thresholds explicit.
-private const val VIDEO_MIN_BUFFER_MS = 50_000
-private const val VIDEO_MAX_BUFFER_MS = 50_000
-private const val VIDEO_START_BUFFER_MS = 1_000
-private const val VIDEO_REBUFFER_BUFFER_MS = 2_000
-private const val FALLBACK_START_COUNTDOWN_SECONDS = 5L
+private const val VIDEO_MIN_BUFFER_MS = 20_000
+private const val VIDEO_MAX_BUFFER_MS = 40_000
+private const val VIDEO_START_BUFFER_MS = 500
+private const val VIDEO_REBUFFER_BUFFER_MS = 1_000
+private const val FALLBACK_START_COUNTDOWN_SECONDS = 3L
 
 // Use a small first range for quick startup, then larger ranges for throughput.
-private const val TELEGRAM_STREAM_INITIAL_CHUNK_BYTES = 512L * 1024L
+private const val TELEGRAM_STREAM_INITIAL_CHUNK_BYTES = 256L * 1024L
 private const val TELEGRAM_STREAM_CHUNK_BYTES = 4L * 1024L * 1024L
 private const val TELEGRAM_STREAM_READ_BYTES = 1024L * 1024L
 
@@ -588,7 +588,7 @@ class MainActivity : ComponentActivity() {
                 .removeFilesAfterStop(false)
                 .maxConnections(500)
                 .maxActiveDHT(200)
-                .prepareSize(4L * 1024L * 1024L)
+                .prepareSize(1L * 1024L * 1024L)
                 .build()
 
             torrentStream = TorrentStream.init(options).also { stream ->
@@ -1293,6 +1293,7 @@ class MainActivity : ComponentActivity() {
                     VIDEO_START_BUFFER_MS,
                     VIDEO_REBUFFER_BUFFER_MS
                 )
+                .setPrioritizeTimeOverSizeThresholds(true)
                 .build()
 
             val renderersFactory = DefaultRenderersFactory(context)
