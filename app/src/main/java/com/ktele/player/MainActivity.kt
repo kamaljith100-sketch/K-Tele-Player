@@ -68,6 +68,7 @@ import androidx.media3.common.Player
 import androidx.media3.datasource.BaseDataSource
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
@@ -79,7 +80,15 @@ import androidx.media3.ui.PlayerView
 import org.drinkless.tdlib.Client
 import org.drinkless.tdlib.TdApi
 
+import com.github.se_bastiaan.torrentstream.StreamStatus
+import com.github.se_bastiaan.torrentstream.Torrent
+import com.github.se_bastiaan.torrentstream.TorrentOptions
+import com.github.se_bastiaan.torrentstream.TorrentStream
+import com.github.se_bastiaan.torrentstream.listeners.TorrentListener
+
+import java.io.File
 import java.io.IOException
+import java.net.URLDecoder
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -142,7 +151,8 @@ data class VideoItem(
     val title: String,
     val info: String,
     val fileId: Int,
-    val size: Long
+    val size: Long,
+    val localPath: String? = null
 )
 
 // Keep player startup and rebuffer thresholds explicit.
@@ -335,6 +345,14 @@ class MainActivity : ComponentActivity() {
 
     private var browserOpen by mutableStateOf(false)
 
+    private var torrentStream: TorrentStream? = null
+    private var torrentSourceUrl by mutableStateOf<String?>(null)
+    private var torrentSourceTitle by mutableStateOf("")
+    private var torrentPreparing by mutableStateOf(false)
+    private var torrentDownloadMode by mutableStateOf(false)
+    private var torrentProgress by mutableStateOf(0)
+    private var torrentError by mutableStateOf("")
+
 
     override fun onCreate(
         savedInstanceState: Bundle?
@@ -342,6 +360,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         startTelegram()
+        initTorrentStream()
 
         window.statusBarColor = android.graphics.Color.rgb(5, 6, 11)
         window.navigationBarColor = android.graphics.Color.rgb(5, 6, 11)
@@ -359,6 +378,68 @@ class MainActivity : ComponentActivity() {
                     Screen()
                 }
             }
+        }
+    }
+
+
+    private fun initTorrentStream() {
+        val saveDirectory = File(filesDir, "torrents")
+        val options = TorrentOptions.Builder()
+            .saveLocation(saveDirectory)
+            .removeFilesAfterStop(false)
+            .prepareSize(20L * 1024L * 1024L)
+            .build()
+
+        torrentStream = TorrentStream.init(options).also { stream ->
+            stream.addListener(object : TorrentListener {
+                override fun onStreamPrepared(torrent: Torrent?) {
+                }
+
+                override fun onStreamStarted(torrent: Torrent?) {
+                    torrentPreparing = true
+                }
+
+                override fun onStreamError(torrent: Torrent?, e: Exception?) {
+                    torrentPreparing = false
+                    torrentError = e?.message ?: "Could not start torrent"
+                }
+
+                override fun onStreamReady(torrent: Torrent?) {
+                    val videoFile = torrent?.videoFile
+                    torrentPreparing = false
+
+                    if (videoFile == null || !videoFile.exists()) {
+                        torrentError = "Torrent video file is not available"
+                        return
+                    }
+
+                    if (!torrentDownloadMode) {
+                        val bytes = videoFile.length()
+                        playing = VideoItem(
+                            messageId = 0L,
+                            title = torrentSourceTitle.ifBlank { videoFile.name },
+                            info = "Torrent  |  ${bytes / 1048576} MB",
+                            fileId = -1,
+                            size = bytes,
+                            localPath = videoFile.absolutePath
+                        )
+                        torrentSourceUrl = null
+                    } else {
+                        torrentError = "Download started: ${videoFile.name}"
+                    }
+                }
+
+                override fun onStreamProgress(
+                    torrent: Torrent?,
+                    status: StreamStatus?
+                ) {
+                    torrentProgress = status?.bufferProgress ?: 0
+                }
+
+                override fun onStreamStopped() {
+                    torrentPreparing = false
+                }
+            })
         }
     }
 
@@ -693,6 +774,65 @@ class MainActivity : ComponentActivity() {
     }
 
 
+    private fun isTorrentSource(rawUrl: String): Boolean {
+        val value = rawUrl.trim()
+        return value.startsWith("magnet:", ignoreCase = true) ||
+            value.substringBefore("?").substringBefore("#")
+                .endsWith(".torrent", ignoreCase = true) ||
+            value.contains(".torrent?", ignoreCase = true)
+    }
+
+
+    private fun torrentTitle(rawUrl: String): String {
+        val value = rawUrl.trim()
+        if (value.startsWith("magnet:", ignoreCase = true)) {
+            val displayName = Uri.parse(value).getQueryParameter("dn")
+            if (!displayName.isNullOrBlank()) {
+                return try {
+                    URLDecoder.decode(displayName, "UTF-8")
+                } catch (_: Exception) {
+                    displayName
+                }
+            }
+            return "Magnet torrent"
+        }
+
+        return value.substringAfterLast("/")
+            .substringBefore("?")
+            .substringBefore("#")
+            .ifBlank { "Torrent file" }
+    }
+
+
+    private fun showTorrentSource(rawUrl: String) {
+        val value = rawUrl.trim()
+        if (!isTorrentSource(value)) {
+            return
+        }
+
+        torrentSourceUrl = value
+        torrentSourceTitle = torrentTitle(value)
+        torrentError = ""
+        torrentProgress = 0
+    }
+
+
+    private fun startTorrent(download: Boolean) {
+        val source = torrentSourceUrl ?: return
+        torrentDownloadMode = download
+        torrentPreparing = true
+        torrentError = ""
+        torrentProgress = 0
+        torrentStream?.startStream(source)
+    }
+
+
+    private fun stopTorrent() {
+        torrentStream?.stopStream()
+        torrentPreparing = false
+    }
+
+
     private fun submit(
         text: String
     ) {
@@ -731,6 +871,7 @@ class MainActivity : ComponentActivity() {
 
         when {
             currentVideo != null -> PlayerScreen(currentVideo)
+            torrentSourceUrl != null -> TorrentSourceDialog()
             browserOpen -> BrowserScreen()
             else -> ListScreen()
         }
@@ -817,29 +958,36 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        val player = remember(item.fileId) {
-            val factory = DataSource.Factory {
-                TdFileDataSource(
-                    { function ->
-                        sendBlocking(function)
-                    },
-                    item.fileId,
-                    item.size
+        val player = remember(item.fileId, item.localPath) {
+            val source = if (item.localPath != null) {
+                ProgressiveMediaSource.Factory(
+                    DefaultDataSource.Factory(context)
+                ).createMediaSource(
+                    MediaItem.fromUri(Uri.fromFile(File(item.localPath)))
                 )
-            }
+            } else {
+                val factory = DataSource.Factory {
+                    TdFileDataSource(
+                        { function ->
+                            sendBlocking(function)
+                        },
+                        item.fileId,
+                        item.size
+                    )
+                }
 
-            val uri = Uri.Builder()
-                .scheme("td")
-                .authority("file")
-                .appendPath(item.fileId.toString())
-                .appendPath(item.title)
-                .build()
+                val uri = Uri.Builder()
+                    .scheme("td")
+                    .authority("file")
+                    .appendPath(item.fileId.toString())
+                    .appendPath(item.title)
+                    .build()
 
-            val source =
                 ProgressiveMediaSource.Factory(factory)
                     .createMediaSource(
                         MediaItem.fromUri(uri)
                     )
+            }
 
             val loadControl = DefaultLoadControl.Builder()
                 .setBufferDurationsMs(
@@ -980,6 +1128,9 @@ class MainActivity : ComponentActivity() {
         DisposableEffect(player) {
             onDispose {
                 player.release()
+                if (item.localPath != null && !torrentDownloadMode) {
+                    stopTorrent()
+                }
             }
         }
 
@@ -1100,6 +1251,95 @@ class MainActivity : ComponentActivity() {
 
 
     @Composable
+    private fun TorrentSourceDialog() {
+        val source = torrentSourceUrl ?: return
+        val isMagnet = source.startsWith("magnet:", ignoreCase = true)
+
+        BackHandler {
+            torrentSourceUrl = null
+        }
+
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = Color(0xFF05060B)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "K-Tele Torrent Downloader",
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = Color(0xFF13CFF0)
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Text(
+                    text = torrentSourceTitle,
+                    style = MaterialTheme.typography.titleMedium
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = if (isMagnet) "Magnet link" else "Torrent file",
+                    color = Color(0xFFC0C5D7)
+                )
+
+                if (torrentError.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(torrentError, color = Color(0xFFFF6B84))
+                }
+
+                if (torrentPreparing) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    CircularProgressIndicator()
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Finding peers and preparing video…")
+                }
+
+                Spacer(modifier = Modifier.height(32.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    TextButton(
+                        onClick = {
+                            if (torrentPreparing) stopTorrent()
+                            torrentSourceUrl = null
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("CLOSE")
+                    }
+
+                    Button(
+                        onClick = { startTorrent(download = false) },
+                        enabled = !torrentPreparing,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("PLAY")
+                    }
+
+                    Button(
+                        onClick = { startTorrent(download = true) },
+                        enabled = !torrentPreparing,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("DOWNLOAD")
+                    }
+                }
+            }
+        }
+    }
+
+
+    @Composable
     private fun BrowserScreen() {
         val initialUrl = "https://www.google.com"
         var urlText by remember { mutableStateOf(initialUrl) }
@@ -1108,6 +1348,11 @@ class MainActivity : ComponentActivity() {
         fun openUrl(rawUrl: String, view: WebView?) {
             val trimmed = rawUrl.trim()
             if (trimmed.isEmpty()) {
+                return
+            }
+
+            if (isTorrentSource(trimmed)) {
+                showTorrentSource(trimmed)
                 return
             }
 
@@ -1210,11 +1455,21 @@ class MainActivity : ComponentActivity() {
                         settings.useWideViewPort = true
                         settings.mediaPlaybackRequiresUserGesture = false
                         webChromeClient = WebChromeClient()
+                        setDownloadListener { url, _, _, _, _ ->
+                            if (isTorrentSource(url)) {
+                                showTorrentSource(url)
+                            }
+                        }
                         webViewClient = object : WebViewClient() {
                             override fun shouldOverrideUrlLoading(
                                 view: WebView,
                                 request: WebResourceRequest
                             ): Boolean {
+                                val url = request.url.toString()
+                                if (isTorrentSource(url)) {
+                                    showTorrentSource(url)
+                                    return true
+                                }
                                 return false
                             }
 
