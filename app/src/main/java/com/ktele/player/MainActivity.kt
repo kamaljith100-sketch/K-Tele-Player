@@ -146,7 +146,8 @@ private const val VIDEO_MAX_BUFFER_MS = 50_000
 private const val VIDEO_START_BUFFER_MS = 1_000
 private const val VIDEO_REBUFFER_BUFFER_MS = 2_000
 
-// Fetch only small on-demand ranges; playback reads each range incrementally.
+// Use a small first range for quick startup, then larger ranges for throughput.
+private const val TELEGRAM_STREAM_INITIAL_CHUNK_BYTES = 512L * 1024L
 private const val TELEGRAM_STREAM_CHUNK_BYTES = 4L * 1024L * 1024L
 private const val TELEGRAM_STREAM_READ_BYTES = 1024L * 1024L
 
@@ -202,11 +203,23 @@ class TdFileDataSource(
             fileSize - position
         )
 
-        val chunkStart =
-            (position / TELEGRAM_STREAM_CHUNK_BYTES) * TELEGRAM_STREAM_CHUNK_BYTES
+        val chunkStart = if (position < TELEGRAM_STREAM_INITIAL_CHUNK_BYTES) {
+            0L
+        } else {
+            TELEGRAM_STREAM_INITIAL_CHUNK_BYTES +
+                (
+                    (position - TELEGRAM_STREAM_INITIAL_CHUNK_BYTES) /
+                        TELEGRAM_STREAM_CHUNK_BYTES
+                ) * TELEGRAM_STREAM_CHUNK_BYTES
+        }
+        val chunkSize = if (chunkStart == 0L) {
+            TELEGRAM_STREAM_INITIAL_CHUNK_BYTES
+        } else {
+            TELEGRAM_STREAM_CHUNK_BYTES
+        }
         val chunkEnd = minOf(
             fileSize,
-            chunkStart + TELEGRAM_STREAM_CHUNK_BYTES
+            chunkStart + chunkSize
         )
 
         if (position < windowStart || position >= windowEnd) {
