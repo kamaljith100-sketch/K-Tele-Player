@@ -691,7 +691,6 @@ class MainActivity : ComponentActivity() {
     private var iptvLoading by mutableStateOf(false)
     private var iptvError by mutableStateOf("")
     private var selectedCatalogMovie by mutableStateOf<CatalogMovie?>(null)
-    private var selectedMusic by mutableStateOf<IptvChannel?>(null)
 
     private var torrentStream: TorrentStream? = null
     private var torrentSourceUrl by mutableStateOf<String?>(null)
@@ -1310,10 +1309,6 @@ class MainActivity : ComponentActivity() {
 
         when {
             currentVideo != null -> PlayerScreen(currentVideo)
-            selectedMusic != null -> IptvPlayerScreen(
-                channel = selectedMusic!!,
-                onClose = { selectedMusic = null }
-            )
             homeOpen -> HomeScreen()
             menuOpen -> MainMenuScreen()
             mediaHubOpen -> MediaHubScreen()
@@ -2397,13 +2392,6 @@ class MainActivity : ComponentActivity() {
         var playerError by remember(channel.streamUrl) { mutableStateOf("") }
         val player = remember(channel.streamUrl) {
             ExoPlayer.Builder(context).build().apply {
-                setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-                        .setUsage(C.USAGE_MEDIA)
-                        .build(),
-                    true
-                )
                 setMediaItem(MediaItem.fromUri(channel.streamUrl))
                 playWhenReady = true
                 addListener(object : Player.Listener {
@@ -2475,8 +2463,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun openMovieSite(url: String) {
-        // Keep web content inside the app instead of handing it to an external browser.
+    private fun openInAppBrowser(url: String) {
         selectedBrowserUrl = url
         homeOpen = false
         menuOpen = false
@@ -2484,6 +2471,15 @@ class MainActivity : ComponentActivity() {
         settingsOpen = false
         iptvOpen = false
         browserOpen = true
+    }
+
+    private fun openMovieSite(url: String) {
+        val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+        try {
+            startActivity(browserIntent)
+        } catch (_: Exception) {
+            openInAppBrowser(url)
+        }
     }
 
     @Composable
@@ -2744,38 +2740,16 @@ class MainActivity : ComponentActivity() {
             Spacer(modifier = Modifier.height(16.dp))
 
             Card(modifier = Modifier.fillMaxWidth()) {
-                var musicUrl by remember { mutableStateOf("") }
-
                 Column(modifier = Modifier.padding(20.dp)) {
-                    Text("Music Player", style = MaterialTheme.typography.titleLarge)
+                    Text("Music", style = MaterialTheme.typography.titleLarge)
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        "Paste a direct music link and play it with the existing player.",
+                        "Listen to music online.",
                         color = Color(0xFFB9C2D0)
                     )
                     Spacer(modifier = Modifier.height(14.dp))
-                    OutlinedTextField(
-                        value = musicUrl,
-                        onValueChange = { musicUrl = it },
-                        label = { Text("Direct music link") },
-                        placeholder = { Text("https://...mp3 or .m3u8") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Button(
-                        enabled = musicUrl.trim().isNotEmpty(),
-                        onClick = {
-                            val url = musicUrl.trim()
-                            selectedMusic = IptvChannel(
-                                name = "Music",
-                                category = "Songs",
-                                streamUrl = url
-                            )
-                            mediaHubOpen = false
-                        }
-                    ) {
-                        Text("Play Music")
+                    Button(onClick = { openMovieSite("https://listenfree.in/") }) {
+                        Text("Open Music")
                     }
                 }
             }
@@ -2792,7 +2766,7 @@ class MainActivity : ComponentActivity() {
                     )
                     Spacer(modifier = Modifier.height(14.dp))
                     Button(onClick = {
-                        openMovieSite(MALAYALAM_RADIO_URL)
+                        openInAppBrowser(MALAYALAM_RADIO_URL)
                     }) {
                         Text("Open Malayalam Radio")
                     }
