@@ -1980,26 +1980,26 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun IptvScreen() {
         val context = LocalContext.current
-        val packageName = "com.ottnavigator.iptvnavigator"
-        val playStoreUrl = "https://play.google.com/store/apps/details?id=$packageName"
+        val packageName = "com.streamvault.app"
+        val installUrl = "https://github.com/Davidona/StreamVault-IPTV/releases/latest/download/StreamVault.apk"
         val defaultPlaylistUrl = "https://iptv-org.github.io/iptv/index.m3u"
         var playlistUrl by remember { mutableStateOf(defaultPlaylistUrl) }
         var copied by remember { mutableStateOf(false) }
 
-        fun installOrOpenOttNavigator() {
+        fun installOrOpenStreamVault() {
             val launchIntent = context.packageManager.getLaunchIntentForPackage(packageName)
             val intent = launchIntent ?: Intent(
                 Intent.ACTION_VIEW,
-                Uri.parse("market://details?id=$packageName")
+                Uri.parse(installUrl)
             )
             try {
                 context.startActivity(intent)
             } catch (_: Exception) {
-                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(playStoreUrl)))
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(installUrl)))
             }
         }
 
-        fun openPlaylistInOttNavigator() {
+        fun openPlaylistInStreamVault() {
             val uri = Uri.parse(playlistUrl.trim())
             val ottIntent = Intent(Intent.ACTION_VIEW, uri).apply {
                 setPackage(packageName)
@@ -2050,7 +2050,7 @@ class MainActivity : ComponentActivity() {
                     Text("IPTV playlist", style = MaterialTheme.typography.titleLarge)
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "Use this M3U playlist with OTT Navigator or another IPTV player.",
+                        "Use this M3U playlist with StreamVault or another IPTV player.",
                         color = Color(0xFFB9C2D0)
                     )
                     Spacer(modifier = Modifier.height(14.dp))
@@ -2070,7 +2070,7 @@ class MainActivity : ComponentActivity() {
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Button(
-                            onClick = { openPlaylistInOttNavigator() },
+                            onClick = { openPlaylistInStreamVault() },
                             modifier = Modifier.weight(1f)
                         ) {
                             Text("Open playlist")
@@ -2089,15 +2089,15 @@ class MainActivity : ComponentActivity() {
 
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(20.dp)) {
-                    Text("OTT Navigator IPTV", style = MaterialTheme.typography.titleLarge)
+                    Text("StreamVault IPTV", style = MaterialTheme.typography.titleLarge)
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "Install or open OTT Navigator to manage this playlist.",
+                        "Install or open StreamVault to manage this playlist.",
                         color = Color(0xFFB9C2D0)
                     )
                     Spacer(modifier = Modifier.height(14.dp))
-                    Button(onClick = { installOrOpenOttNavigator() }) {
-                        Text("Install / Open OTT Navigator")
+                    Button(onClick = { installOrOpenStreamVault() }) {
+                        Text("Install / Open StreamVault")
                     }
                 }
             }
