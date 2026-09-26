@@ -1438,6 +1438,7 @@ class MainActivity : ComponentActivity() {
                     CircularProgressIndicator()
                     Text(
                         text = "Starting in",
+                        color = Color(0xFFFF3B4D),
                         style = MaterialTheme.typography.bodyLarge
                     )
                     val etaSeconds = estimatedStartSeconds
