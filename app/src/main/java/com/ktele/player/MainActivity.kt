@@ -178,6 +178,8 @@ private val catalogCategories = listOf(
     "All", "Malayalam", "Tamil", "Hindi", "Hollywood", "Dubbed", "Others"
 )
 
+private const val MALAYALAM_RADIO_URL = "https://radiosindia.com/malayalamradio.html"
+
 // Demo entries are open/licensed films. Replace or extend these with your own licensed catalog.
 private val catalogMovies = listOf(
     CatalogMovie(
@@ -2762,7 +2764,7 @@ class MainActivity : ComponentActivity() {
 
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(20.dp)) {
-                    Text("Radio", style = MaterialTheme.typography.titleLarge)
+                    Text("Malayalam Radio", style = MaterialTheme.typography.titleLarge)
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
                         "Listen to Malayalam radio stations.",
@@ -2770,9 +2772,9 @@ class MainActivity : ComponentActivity() {
                     )
                     Spacer(modifier = Modifier.height(14.dp))
                     Button(onClick = {
-                        openMovieSite("https://radiosindia.com/malayalamradio.html")
+                        openMovieSite(MALAYALAM_RADIO_URL)
                     }) {
-                        Text("Open Radio")
+                        Text("Open Malayalam Radio")
                     }
                 }
             }
