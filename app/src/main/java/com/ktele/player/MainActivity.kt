@@ -2434,6 +2434,17 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun openMovieSite(url: String) {
+        val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+        try {
+            startActivity(browserIntent)
+        } catch (_: Exception) {
+            selectedBrowserUrl = url
+            mediaHubOpen = false
+            browserOpen = true
+        }
+    }
+
     @Composable
     private fun MediaHubScreen() {
         BackHandler { mediaHubOpen = false }
