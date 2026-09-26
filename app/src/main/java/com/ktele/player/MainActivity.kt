@@ -635,6 +635,18 @@ private const val AD_CLEANUP_HOOK = """
 })();
 """
 
+@Composable
+private fun AppLogo(
+    modifier: Modifier = Modifier.size(96.dp)
+) {
+    Image(
+        painter = painterResource(id = R.drawable.ktele_player_logo),
+        contentDescription = "K- Univese logo",
+        contentScale = ContentScale.Fit,
+        modifier = modifier
+    )
+}
+
 class MainActivity : ComponentActivity() {
 
     private var client: Client? = null
@@ -1605,6 +1617,13 @@ class MainActivity : ComponentActivity() {
         Box(
             modifier = Modifier.fillMaxSize()
         ) {
+            AppLogo(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(16.dp)
+                    .size(72.dp)
+            )
+
             AndroidView(
                 factory = { viewContext ->
                     PlayerView(viewContext).apply {
@@ -1755,12 +1774,12 @@ class MainActivity : ComponentActivity() {
                             ) {
                                 Image(
                                     painter = painterResource(id = R.drawable.ktele_player_logo),
-                                    contentDescription = "K-Tele Player",
+                                    contentDescription = "K- Univese",
                                     modifier = Modifier.size(54.dp)
                                 )
                                 Spacer(modifier = Modifier.size(12.dp))
                                 Text(
-                                    text = "K-fast Downloader",
+                                    text = "K- Univese",
                                     color = Color.White,
                                     fontSize = 22.sp,
                                     fontWeight = FontWeight.Bold
@@ -1893,7 +1912,7 @@ class MainActivity : ComponentActivity() {
         ) {
             Image(
                 painter = painterResource(id = R.drawable.ktele_player_logo),
-                contentDescription = "K-Tele Player logo",
+                contentDescription = "K- Univese logo",
                 contentScale = ContentScale.Fit,
                 modifier = Modifier
                     .size(104.dp)
@@ -2023,6 +2042,8 @@ class MainActivity : ComponentActivity() {
                 .fillMaxSize()
                 .padding(20.dp)
         ) {
+            AppLogo(Modifier.align(Alignment.CenterHorizontally))
+            Spacer(modifier = Modifier.height(12.dp))
             TextButton(onClick = { selectedCatalogMovie = null }) {
                 Text("Back to catalog")
             }
@@ -2151,6 +2172,8 @@ class MainActivity : ComponentActivity() {
                 .fillMaxSize()
                 .padding(24.dp)
         ) {
+            AppLogo(Modifier.align(Alignment.CenterHorizontally))
+            Spacer(modifier = Modifier.height(12.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -2292,6 +2315,8 @@ class MainActivity : ComponentActivity() {
                 .fillMaxSize()
                 .padding(24.dp)
         ) {
+            AppLogo(Modifier.align(Alignment.CenterHorizontally))
+            Spacer(modifier = Modifier.height(12.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -2310,7 +2335,7 @@ class MainActivity : ComponentActivity() {
                     Text("IPTV playlist", style = MaterialTheme.typography.titleLarge)
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        "Change the M3U source and load channels directly in K-Tele Player.",
+                        "Change the M3U source and load channels directly in K- Univese.",
                         color = Color(0xFFB9C2D0)
                     )
                     Spacer(modifier = Modifier.height(12.dp))
@@ -2418,6 +2443,13 @@ class MainActivity : ComponentActivity() {
                 .fillMaxSize()
                 .background(Color.Black)
         ) {
+            AppLogo(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(16.dp)
+                    .size(72.dp)
+            )
+
             AndroidView(
                 factory = { viewContext ->
                     PlayerView(viewContext).apply {
@@ -2472,7 +2504,7 @@ class MainActivity : ComponentActivity() {
         ) {
             Image(
                 painter = painterResource(id = R.drawable.ktele_player_logo),
-                contentDescription = "K-Tele Player logo",
+                contentDescription = "K- Univese logo",
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.size(220.dp)
             )
@@ -2493,6 +2525,9 @@ class MainActivity : ComponentActivity() {
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.Start
         ) {
+            AppLogo(Modifier.align(Alignment.CenterHorizontally))
+            Spacer(modifier = Modifier.height(20.dp))
+
             Button(
                 onClick = {
                     menuOpen = false
@@ -2547,7 +2582,7 @@ class MainActivity : ComponentActivity() {
         ) {
             Image(
                 painter = painterResource(id = R.drawable.ktele_player_logo),
-                contentDescription = "K-Tele Player logo",
+                contentDescription = "K- Univese logo",
                 contentScale = ContentScale.Fit,
                 modifier = Modifier
                     .size(176.dp)
@@ -2623,6 +2658,9 @@ class MainActivity : ComponentActivity() {
                 .padding(24.dp),
             verticalArrangement = Arrangement.Top
         ) {
+            AppLogo(Modifier.align(Alignment.CenterHorizontally))
+            Spacer(modifier = Modifier.height(12.dp))
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -2678,7 +2716,7 @@ class MainActivity : ComponentActivity() {
                     Text("Movies", style = MaterialTheme.typography.titleLarge)
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        "Open a movie site in K-Tele's built-in browser.",
+                        "Open a movie site in K- Univese's built-in browser.",
                         color = Color(0xFFB9C2D0)
                     )
                     Spacer(modifier = Modifier.height(10.dp))
@@ -2886,12 +2924,12 @@ class MainActivity : ComponentActivity() {
                 ) {
                     Image(
                         painter = painterResource(id = R.drawable.ktele_player_logo),
-                        contentDescription = "K-fast logo",
+                        contentDescription = "K- Univese logo",
                         contentScale = ContentScale.Fit,
                         modifier = Modifier.size(42.dp)
                     )
                     Spacer(modifier = Modifier.size(10.dp))
-                    Text("K-fast", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text("K- Univese", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.weight(1f))
                     TextButton(onClick = {
                         selectedBrowserUrl = null
@@ -2908,11 +2946,11 @@ class MainActivity : ComponentActivity() {
                     Spacer(modifier = Modifier.height(42.dp))
                     Image(
                         painter = painterResource(id = R.drawable.ktele_player_logo),
-                        contentDescription = "K-fast logo",
+                        contentDescription = "K- Univese logo",
                         contentScale = ContentScale.Fit,
                         modifier = Modifier.size(78.dp)
                     )
-                    Text("K-fast", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                    Text("K- Univese", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(24.dp))
 
                     OutlinedTextField(
@@ -2977,6 +3015,8 @@ class MainActivity : ComponentActivity() {
                     .fillMaxSize()
                     .padding(8.dp)
             ) {
+                AppLogo(Modifier.size(54.dp))
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
@@ -3143,19 +3183,16 @@ class MainActivity : ComponentActivity() {
                     Arrangement.Center
                 }
             ) {
+                AppLogo(
+                    Modifier
+                        .size(176.dp)
+                        .align(Alignment.CenterHorizontally)
+                )
+
                 if (stage == "ready") {
                     Text(
-                        text = "K-Tele Player",
+                        text = "K- Univese",
                         style = MaterialTheme.typography.headlineMedium
-                    )
-                } else {
-                    Image(
-                        painter = painterResource(id = R.drawable.ktele_player_logo),
-                        contentDescription = "K-Tele Player logo",
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier
-                            .size(176.dp)
-                            .align(Alignment.CenterHorizontally)
                     )
                 }
 
