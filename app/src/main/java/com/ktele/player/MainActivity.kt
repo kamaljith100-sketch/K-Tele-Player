@@ -2042,7 +2042,18 @@ class MainActivity : ComponentActivity() {
     private fun BrowserScreen() {
         val initialUrl = "https://www.google.com"
         var urlText by remember { mutableStateOf(initialUrl) }
+        var searchQuery by remember { mutableStateOf("") }
+        var browserStartUrl by remember { mutableStateOf(initialUrl) }
+        var browserHome by remember { mutableStateOf(true) }
         var browserView by remember { mutableStateOf<WebView?>(null) }
+        var selectedProvider by remember { mutableStateOf("All legal providers") }
+        var bookmarks by remember { mutableStateOf(listOf<String>()) }
+        val providerOptions = listOf(
+            "All legal providers",
+            "Internet Archive",
+            "Wikimedia Commons",
+            "Blender Open Movies"
+        )
 
         fun handleSpecialUrl(rawUrl: String, view: WebView?): Boolean {
             val trimmed = rawUrl.trim()
@@ -2073,6 +2084,8 @@ class MainActivity : ComponentActivity() {
                         fallbackUrl.startsWith("https://", ignoreCase = true))
                 ) {
                     urlText = fallbackUrl
+                    browserStartUrl = fallbackUrl
+                    browserHome = false
                     view?.loadUrl(fallbackUrl)
                     true
                 } else {
@@ -2085,35 +2098,50 @@ class MainActivity : ComponentActivity() {
 
         fun openUrl(rawUrl: String, view: WebView?) {
             val trimmed = rawUrl.trim()
-            if (trimmed.isEmpty()) {
-                return
-            }
+            if (trimmed.isEmpty()) return
 
             if (normalizeTorrentSource(trimmed) != null) {
                 showTorrentSource(trimmed)
                 return
             }
 
-            if (handleSpecialUrl(trimmed, view)) {
-                return
-            }
+            if (handleSpecialUrl(trimmed, view)) return
 
+            val encodedQuery = Uri.encode(trimmed)
             val target = if (
                 trimmed.startsWith("http://") ||
                 trimmed.startsWith("https://")
             ) {
                 trimmed
             } else {
-                "https://www.google.com/search?q=" + Uri.encode(trimmed)
+                when (selectedProvider) {
+                    "Internet Archive" ->
+                        "https://archive.org/advancedsearch.php?q=$encodedQuery&output=html"
+                    "Wikimedia Commons" ->
+                        "https://commons.wikimedia.org/w/index.php?search=$encodedQuery&title=Special:MediaSearch&type=video"
+                    "Blender Open Movies" ->
+                        "https://studio.blender.org/films/"
+                    else ->
+                        "https://www.google.com/search?q=$encodedQuery"
+                }
             }
 
             urlText = target
+            browserStartUrl = target
+            browserHome = false
             view?.loadUrl(target)
         }
+
         BackHandler {
             val view = browserView
             if (view?.canGoBack() == true) {
                 view.goBack()
+            } else if (!browserHome) {
+                view?.stopLoading()
+                view?.destroy()
+                browserView = null
+                browserHome = true
+                urlText = initialUrl
             } else {
                 browserOpen = false
             }
@@ -2126,66 +2154,186 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(8.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+        if (browserHome) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xFF08080B))
+                    .padding(horizontal = 24.dp)
             ) {
-                Button(
-                    onClick = { browserOpen = false }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Home")
+                    Image(
+                        painter = painterResource(id = R.drawable.ktele_player_logo),
+                        contentDescription = "K-fast logo",
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.size(42.dp)
+                    )
+                    Spacer(modifier = Modifier.size(10.dp))
+                    Text("K-fast", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.weight(1f))
+                    TextButton(onClick = { browserOpen = false }) { Text("Home") }
                 }
 
-                Spacer(
-                    modifier = Modifier.size(8.dp)
-                )
-
-                OutlinedTextField(
-                    value = urlText,
-                    onValueChange = { urlText = it },
-                    label = { Text("Website or search") },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f)
-                )
-
-                Spacer(
-                    modifier = Modifier.size(8.dp)
-                )
-
-                Button(
-                    onClick = { openUrl(urlText, browserView) }
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text("Go")
+                    Spacer(modifier = Modifier.height(42.dp))
+                    Image(
+                        painter = painterResource(id = R.drawable.ktele_player_logo),
+                        contentDescription = "K-fast logo",
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.size(78.dp)
+                    )
+                    Text("K-fast", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        label = { Text("Search web or legal provider query") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        trailingIcon = {
+                            TextButton(onClick = { openUrl(searchQuery, null) }) {
+                                Text("Go")
+                            }
+                        }
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Button(
+                            onClick = {
+                                val current = providerOptions.indexOf(selectedProvider)
+                                selectedProvider = providerOptions[(current + 1) % providerOptions.size]
+                            },
+                            shape = RoundedCornerShape(18.dp)
+                        ) {
+                            Text(selectedProvider)
+                        }
+                        Button(
+                            onClick = { openUrl(searchQuery, null) },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(18.dp)
+                        ) {
+                            Text("Search selected provider")
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "Legal providers • Internet Archive • Wikimedia Commons • Blender Open Movies",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFFB9C2D0)
+                    )
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("🔖  Bookmarks", style = MaterialTheme.typography.titleMedium)
+                                Spacer(modifier = Modifier.weight(1f))
+                                Text(bookmarks.size.toString(), color = Color(0xFF13CFF0))
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                            if (bookmarks.isEmpty()) {
+                                Text("No bookmarks yet", style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    "Search a legal provider and tap Add Bookmark to save it.",
+                                    color = Color(0xFFB9C2D0)
+                                )
+                            } else {
+                                bookmarks.forEach { bookmark ->
+                                    TextButton(
+                                        onClick = { openUrl(bookmark, null) },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(bookmark, modifier = Modifier.fillMaxWidth())
+                                    }
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Button(
+                                onClick = {
+                                    val value = searchQuery.trim()
+                                    if (value.isNotEmpty() && !bookmarks.contains(value)) {
+                                        bookmarks = bookmarks + value
+                                    }
+                                },
+                                shape = RoundedCornerShape(18.dp)
+                            ) {
+                                Text("+ Add Bookmark")
+                            }
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    TextButton(onClick = { browserHome = true }) { Text("⌂  Home") }
+                    TextButton(onClick = { }) { Text("⇩  Download") }
+                    TextButton(onClick = { }) { Text("✓  Completed") }
                 }
             }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(8.dp)
             ) {
-                TextButton(
-                    onClick = { browserView?.goBack() }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Back")
+                    Button(onClick = {
+                        browserView?.stopLoading()
+                        browserView?.destroy()
+                        browserView = null
+                        browserHome = true
+                    }) {
+                        Text("Home")
+                    }
+                    Spacer(modifier = Modifier.size(8.dp))
+                    OutlinedTextField(
+                        value = urlText,
+                        onValueChange = { urlText = it },
+                        label = { Text("Website or search") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Spacer(modifier = Modifier.size(8.dp))
+                    Button(onClick = { openUrl(urlText, browserView) }) {
+                        Text("Go")
+                    }
                 }
 
-                TextButton(
-                    onClick = { browserView?.goForward() }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text("Forward")
+                    TextButton(onClick = { browserView?.goBack() }) { Text("Back") }
+                    TextButton(onClick = { browserView?.goForward() }) { Text("Forward") }
+                    TextButton(onClick = { browserView?.reload() }) { Text("Reload") }
                 }
-
-                TextButton(
-                    onClick = { browserView?.reload() }
-                ) {
-                    Text("Reload")
-                }
-            }
 
             AndroidView(
                 factory = { viewContext ->
@@ -2280,7 +2428,7 @@ class MainActivity : ComponentActivity() {
                                 view.evaluateJavascript(AD_CLEANUP_HOOK, null)
                             }
                         }
-                        loadUrl(initialUrl)
+                        loadUrl(browserStartUrl)
                         browserView = this
                     }
                 },
@@ -2288,6 +2436,7 @@ class MainActivity : ComponentActivity() {
                     .fillMaxSize()
                     .weight(1f)
             )
+            }
         }
     }
 
