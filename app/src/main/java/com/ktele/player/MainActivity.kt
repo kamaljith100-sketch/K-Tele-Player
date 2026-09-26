@@ -3029,6 +3029,14 @@ class MainActivity : ComponentActivity() {
                         }
                     )
 
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        "Torrent വെബ്സൈറ്റിൽ സന്ദർശിക്കുക. .torrent, 🧲 magnet file ക്ലിക്ക് ചെയ്യുക ഡയറക്റ്റ് വീഡിയോ പ്ലേ ചെയ്യുന്നതാണ്.",
+                        color = Color(0xFFB9C2D0),
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
                     Spacer(modifier = Modifier.height(24.dp))
 
                     Card(modifier = Modifier.fillMaxWidth()) {
