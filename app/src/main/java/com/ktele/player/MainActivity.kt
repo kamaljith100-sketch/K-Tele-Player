@@ -40,6 +40,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.OutlinedTextField
@@ -2092,6 +2093,7 @@ class MainActivity : ComponentActivity() {
             context.getSharedPreferences("iptv_favorites", Context.MODE_PRIVATE)
         }
         var searchQuery by remember { mutableStateOf("") }
+        var favoritesOnly by remember { mutableStateOf(false) }
         var favoriteUrls by remember(favoritePreferences) {
             mutableStateOf(
                 favoritePreferences.getStringSet("urls", emptySet())?.toSet().orEmpty()
@@ -2119,19 +2121,12 @@ class MainActivity : ComponentActivity() {
         }
 
         val normalizedQuery = searchQuery.trim()
-        val matchingChannels = if (normalizedQuery.isNotEmpty()) {
-            iptvChannels.filter { channel ->
-                channel.name.contains(normalizedQuery, ignoreCase = true) ||
-                    channel.category.contains(normalizedQuery, ignoreCase = true)
-            }
-        } else {
-            iptvChannels
-        }
-        val favoriteChannels = matchingChannels.filter { channel ->
-            favoriteUrls.contains(channel.streamUrl)
-        }
-        val otherChannels = matchingChannels.filterNot { channel ->
-            favoriteUrls.contains(channel.streamUrl)
+        val matchingChannels = iptvChannels.filter { channel ->
+            val matchesSearch = normalizedQuery.isEmpty() ||
+                channel.name.contains(normalizedQuery, ignoreCase = true)
+            val matchesFavorites = !favoritesOnly ||
+                favoriteUrls.contains(channel.streamUrl)
+            matchesSearch && matchesFavorites
         }
 
         if (selectedChannel != null) {
@@ -2169,6 +2164,27 @@ class MainActivity : ComponentActivity() {
             }
 
             Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    label = { Text("Search channels") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f)
+                )
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Favorites", style = MaterialTheme.typography.labelSmall)
+                    Switch(
+                        checked = favoritesOnly,
+                        onCheckedChange = { favoritesOnly = it }
+                    )
+                }
+            }
 
             if (iptvError.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(12.dp))
@@ -2211,41 +2227,13 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    if (favoriteChannels.isNotEmpty()) {
-                        item {
-                            Text(
-                                "Favorites",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = Color(0xFF13CFF0),
-                                modifier = Modifier.padding(top = 4.dp)
-                            )
-                        }
-                        items(favoriteChannels, key = { "favorite-" + it.streamUrl }) { channel ->
-                            IptvChannelRow(
-                                channel = channel,
-                                isFavorite = true,
-                                onToggleFavorite = { toggleFavorite(channel) },
-                                onPlay = { selectedChannel = channel }
-                            )
-                        }
-                    }
-                    if (otherChannels.isNotEmpty()) {
-                        item {
-                            Text(
-                                if (normalizedQuery.isEmpty()) "All channels" else "Other results",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = Color(0xFFB9C2D0),
-                                modifier = Modifier.padding(top = 8.dp)
-                            )
-                        }
-                        items(otherChannels, key = { "other-" + it.streamUrl }) { channel ->
-                            IptvChannelRow(
-                                channel = channel,
-                                isFavorite = false,
-                                onToggleFavorite = { toggleFavorite(channel) },
-                                onPlay = { selectedChannel = channel }
-                            )
-                        }
+                    items(matchingChannels, key = { it.streamUrl }) { channel ->
+                        IptvChannelRow(
+                            channel = channel,
+                            isFavorite = favoriteUrls.contains(channel.streamUrl),
+                            onToggleFavorite = { toggleFavorite(channel) },
+                            onPlay = { selectedChannel = channel }
+                        )
                     }
                 }
             }
@@ -2315,7 +2303,7 @@ class MainActivity : ComponentActivity() {
                     Text("IPTV playlist", style = MaterialTheme.typography.titleLarge)
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        "Change the M3U source and load supported Malayalam, Tamil, Movies and Songs channels.",
+                        "Change the M3U source and load channels directly in K-Tele Player.",
                         color = Color(0xFFB9C2D0)
                     )
                     Spacer(modifier = Modifier.height(12.dp))
