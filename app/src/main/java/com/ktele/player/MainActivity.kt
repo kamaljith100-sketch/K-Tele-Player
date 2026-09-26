@@ -238,7 +238,6 @@ data class IptvChannel(
 
 private const val DEFAULT_IPTV_PLAYLIST_URL = "https://iptv-org.github.io/iptv/index.m3u"
 
-private val iptvCategories = listOf("Favorites", "Malayalam", "Tamil", "Movies", "Songs")
 private val iptvGroupPattern = Regex("""group-title="([^"]*)"""")
 
 private fun normalizeIptvCategory(groupTitle: String, channelName: String): String? {
@@ -2076,7 +2075,7 @@ class MainActivity : ComponentActivity() {
             iptvPlaylistUrl = trimmedUrl
             iptvChannels = parseIptvPlaylist(rawPlaylist)
             if (iptvChannels.isEmpty()) {
-                iptvError = "No Malayalam, Tamil, Movies or Songs channels found"
+                iptvError = "No channels found in this playlist"
             }
         } catch (exception: Exception) {
             iptvError = "Could not load playlist: ${exception.message ?: "check the URL"}"
@@ -2092,7 +2091,6 @@ class MainActivity : ComponentActivity() {
         val favoritePreferences = remember(context) {
             context.getSharedPreferences("iptv_favorites", Context.MODE_PRIVATE)
         }
-        var selectedCategory by remember { mutableStateOf("Favorites") }
         var searchQuery by remember { mutableStateOf("") }
         var favoriteUrls by remember(favoritePreferences) {
             mutableStateOf(
@@ -2127,13 +2125,7 @@ class MainActivity : ComponentActivity() {
                     channel.category.contains(normalizedQuery, ignoreCase = true)
             }
         } else {
-            iptvChannels.filter { channel ->
-                if (selectedCategory == "Favorites") {
-                    favoriteUrls.contains(channel.streamUrl)
-                } else {
-                    channel.category == selectedCategory
-                }
-            }
+            iptvChannels.filter { channel -> favoriteUrls.contains(channel.streamUrl) }
         }
 
         if (selectedChannel != null) {
@@ -2170,22 +2162,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                items(iptvCategories) { category ->
-                    Button(
-                        onClick = { selectedCategory = category },
-                        enabled = selectedCategory != category,
-                        shape = RoundedCornerShape(18.dp)
-                    ) {
-                        Text(category)
-                    }
-                }
-            }
+            Spacer(modifier = Modifier.height(12.dp))
 
             if (iptvError.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(12.dp))
@@ -2206,7 +2183,7 @@ class MainActivity : ComponentActivity() {
                     Column(modifier = Modifier.padding(20.dp)) {
                         Text(
                             if (searchQuery.trim().isEmpty()) {
-                                "No channels in $selectedCategory"
+                                "No favourite channels"
                             } else {
                                 "No channels match \"$searchQuery\""
                             },
@@ -2216,10 +2193,8 @@ class MainActivity : ComponentActivity() {
                         Text(
                             if (searchQuery.trim().isNotEmpty()) {
                                 "Try another channel name or clear the search."
-                            } else if (selectedCategory == "Favorites") {
-                                "Open a category and tap the star beside a channel to keep it here."
                             } else {
-                                "No channels were found in this category."
+                                "Search for a channel and tap the star to add it to Favorites."
                             },
                             color = Color(0xFFB9C2D0)
                         )
@@ -2244,11 +2219,6 @@ class MainActivity : ComponentActivity() {
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(channel.name, style = MaterialTheme.typography.titleMedium)
-                                    Text(
-                                        channel.category,
-                                        color = Color(0xFF13CFF0),
-                                        style = MaterialTheme.typography.bodySmall
-                                    )
                                 }
                                 TextButton(onClick = { toggleFavorite(channel) }) {
                                     Text(if (favoriteUrls.contains(channel.streamUrl)) "★" else "☆")
