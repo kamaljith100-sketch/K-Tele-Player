@@ -598,6 +598,7 @@ class MainActivity : ComponentActivity() {
 
     private var browserOpen by mutableStateOf(false)
     private var catalogOpen by mutableStateOf(false)
+    private var mediaHubOpen by mutableStateOf(false)
     private var selectedCatalogMovie by mutableStateOf<CatalogMovie?>(null)
 
     private var torrentStream: TorrentStream? = null
@@ -1217,6 +1218,7 @@ class MainActivity : ComponentActivity() {
 
         when {
             currentVideo != null -> PlayerScreen(currentVideo)
+            mediaHubOpen -> MediaHubScreen()
             browserOpen -> {
                 Box(modifier = Modifier.fillMaxSize()) {
                     BrowserScreen()
@@ -1963,6 +1965,80 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
+    private fun MediaHubScreen() {
+        BackHandler { mediaHubOpen = false }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp),
+            verticalArrangement = Arrangement.Top
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column {
+                    Text("Media", style = MaterialTheme.typography.headlineMedium)
+                    Text(
+                        "Choose how you want to browse",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFFB9C2D0)
+                    )
+                }
+                TextButton(onClick = { mediaHubOpen = false }) {
+                    Text("Home")
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Text("Movie Catalog", style = MaterialTheme.typography.titleLarge)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        "Browse movies by language, poster, quality and size.",
+                        color = Color(0xFFB9C2D0)
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Button(
+                        onClick = {
+                            mediaHubOpen = false
+                            catalogOpen = true
+                        }
+                    ) {
+                        Text("Open Movie Catalog")
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Text("Open Browser", style = MaterialTheme.typography.titleLarge)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        "Open a website or search the web inside the app.",
+                        color = Color(0xFFB9C2D0)
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Button(
+                        onClick = {
+                            mediaHubOpen = false
+                            browserOpen = true
+                        }
+                    ) {
+                        Text("Open Browser")
+                    }
+                }
+            }
+        }
+    }
+
+    @Composable
     private fun BrowserScreen() {
         val initialUrl = "https://www.google.com"
         var urlText by remember { mutableStateOf(initialUrl) }
@@ -2269,8 +2345,8 @@ class MainActivity : ComponentActivity() {
                         val current = openChatId
 
                         if (current == null) {
-                            Button(onClick = { catalogOpen = true }) {
-                                Text("Movie Catalog")
+                            Button(onClick = { mediaHubOpen = true }) {
+                                Text("Media")
                             }
 
                             Spacer(modifier = Modifier.height(12.dp))
@@ -2284,11 +2360,6 @@ class MainActivity : ComponentActivity() {
                                 modifier = Modifier.height(12.dp)
                             )
 
-                            Button(
-                                onClick = { browserOpen = true }
-                            ) {
-                                Text("Open Browser")
-                            }
 
                             val savedMessagesId = savedMessagesChatId
                             val orderedChatIds =
@@ -2367,16 +2438,8 @@ class MainActivity : ComponentActivity() {
                             else -> "Two-step verification password"
                         }
 
-                        Button(onClick = { catalogOpen = true }) {
-                            Text("Movie Catalog")
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        Button(
-                            onClick = { browserOpen = true }
-                        ) {
-                            Text("Open Browser")
+                        Button(onClick = { mediaHubOpen = true }) {
+                            Text("Media")
                         }
 
                         Spacer(
