@@ -7,6 +7,7 @@ import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.os.Bundle
 import android.os.SystemClock
+import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
@@ -54,6 +55,8 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.viewinterop.AndroidView
 
 import androidx.core.view.WindowCompat
@@ -380,6 +383,21 @@ class TorrentDataSource(
     }
 }
 
+private const val TORRENT_LINK_HOOK = """
+(function() {
+    if (window.__kteleTorrentHook) return;
+    window.__kteleTorrentHook = true;
+    document.addEventListener('click', function(event) {
+        var node = event.target.closest && event.target.closest('a,button,[data-href],[data-url]');
+        if (!node) return;
+        var link = node.href || node.getAttribute('data-href') || node.getAttribute('data-url') || '';
+        if (link && (link.toLowerCase().indexOf('magnet:') === 0 || link.toLowerCase().indexOf('.torrent') >= 0)) {
+            if (window.KTeleTorrent) window.KTeleTorrent.openTorrent(link);
+        }
+    }, true);
+})();
+"""
+
 class MainActivity : ComponentActivity() {
 
     private var client: Client? = null
@@ -412,6 +430,7 @@ class MainActivity : ComponentActivity() {
     private var torrentStream: TorrentStream? = null
     private var torrentSourceUrl by mutableStateOf<String?>(null)
     private var torrentSourceTitle by mutableStateOf("")
+    private var torrentSourceSize by mutableStateOf("Torrent source")
     private var torrentPreparing by mutableStateOf(false)
     private var torrentDownloadMode by mutableStateOf(false)
     private var torrentProgress by mutableStateOf(0)
@@ -839,8 +858,27 @@ class MainActivity : ComponentActivity() {
     }
 
 
+    private fun normalizeTorrentSource(rawUrl: String): String? {
+        val decoded = Uri.decode(rawUrl.trim())
+        if (isTorrentSource(decoded)) {
+            return decoded
+        }
+
+        if (decoded.startsWith("intent://", ignoreCase = true)) {
+            val fallback = decoded.substringAfter("S.browser_fallback_url=", "")
+                .substringBefore(";")
+            val candidate = Uri.decode(fallback)
+            if (isTorrentSource(candidate)) {
+                return candidate
+            }
+        }
+
+        return null
+    }
+
+
     private fun isTorrentSource(rawUrl: String): Boolean {
-        val value = rawUrl.trim()
+        val value = Uri.decode(rawUrl.trim())
         return value.startsWith("magnet:", ignoreCase = true) ||
             value.substringBefore("?").substringBefore("#")
                 .endsWith(".torrent", ignoreCase = true) ||
@@ -849,7 +887,7 @@ class MainActivity : ComponentActivity() {
 
 
     private fun torrentTitle(rawUrl: String): String {
-        val value = rawUrl.trim()
+        val value = Uri.decode(rawUrl.trim())
         if (value.startsWith("magnet:", ignoreCase = true)) {
             val displayName = Uri.parse(value).getQueryParameter("dn")
             if (!displayName.isNullOrBlank()) {
@@ -870,13 +908,19 @@ class MainActivity : ComponentActivity() {
 
 
     private fun showTorrentSource(rawUrl: String) {
-        val value = rawUrl.trim()
-        if (!isTorrentSource(value)) {
-            return
-        }
-
+        val value = normalizeTorrentSource(rawUrl) ?: return
         torrentSourceUrl = value
         torrentSourceTitle = torrentTitle(value)
+        torrentSourceSize = if (value.startsWith("magnet:", ignoreCase = true)) {
+            val bytes = Uri.parse(value).getQueryParameter("xl")?.toLongOrNull()
+            if (bytes != null) {
+                String.format(java.util.Locale.US, "%.2f GB", bytes / 1073741824.0)
+            } else {
+                "Magnet torrent"
+            }
+        } else {
+            "Torrent file"
+        }
         torrentError = ""
         torrentProgress = 0
     }
@@ -936,8 +980,15 @@ class MainActivity : ComponentActivity() {
 
         when {
             currentVideo != null -> PlayerScreen(currentVideo)
+            browserOpen -> {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    BrowserScreen()
+                    if (torrentSourceUrl != null) {
+                        TorrentSourceDialog()
+                    }
+                }
+            }
             torrentSourceUrl != null -> TorrentSourceDialog()
-            browserOpen -> BrowserScreen()
             else -> ListScreen()
         }
     }
@@ -1333,84 +1384,140 @@ class MainActivity : ComponentActivity() {
         }
 
         Surface(
-            modifier = Modifier.fillMaxSize(),
-            color = Color(0xFF05060B)
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(14.dp),
+            color = Color(0xD9000000)
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(24.dp),
-                verticalArrangement = Arrangement.Center,
-                horizontalAlignment = Alignment.CenterHorizontally
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = "K-Tele Torrent Downloader",
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = Color(0xFF13CFF0)
-                )
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                Text(
-                    text = torrentSourceTitle,
-                    style = MaterialTheme.typography.titleMedium
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Text(
-                    text = if (isMagnet) "Magnet link" else "Torrent file",
-                    color = Color(0xFFC0C5D7)
-                )
-
-                if (torrentError.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(torrentError, color = Color(0xFFFF6B84))
-                }
-
-                if (torrentPreparing) {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    CircularProgressIndicator()
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("Finding peers and preparing video…")
-                }
-
-                Spacer(modifier = Modifier.height(32.dp))
-
-                Row(
+                Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    shape = RoundedCornerShape(22.dp),
+                    color = Color(0xFF1B1B1F)
                 ) {
-                    TextButton(
-                        onClick = {
-                            if (torrentPreparing) stopTorrent()
-                            torrentSourceUrl = null
-                        },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("CLOSE")
-                    }
+                    Column {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(22.dp),
+                            color = Color(0xFF08A9E3)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(18.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Image(
+                                    painter = painterResource(id = R.drawable.ktele_player_logo),
+                                    contentDescription = "K-Tele Player",
+                                    modifier = Modifier.size(54.dp)
+                                )
+                                Spacer(modifier = Modifier.size(12.dp))
+                                Text(
+                                    text = "K-fast Downloader",
+                                    color = Color.White,
+                                    fontSize = 22.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
 
-                    Button(
-                        onClick = { startTorrent(download = false) },
-                        enabled = !torrentPreparing,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("PLAY")
-                    }
+                        Column(modifier = Modifier.padding(22.dp)) {
+                            Text(
+                                text = torrentSourceTitle,
+                                color = Color.White,
+                                style = MaterialTheme.typography.titleMedium,
+                                maxLines = 2
+                            )
+                            Spacer(modifier = Modifier.height(22.dp))
+                            Text(
+                                text = "Select Download Source",
+                                color = Color.White,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(14.dp))
 
-                    Button(
-                        onClick = { startTorrent(download = true) },
-                        enabled = !torrentPreparing,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("DOWNLOAD")
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(16.dp),
+                                color = Color(0xFF202126)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(14.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Surface(
+                                        modifier = Modifier.size(58.dp),
+                                        shape = RoundedCornerShape(29.dp),
+                                        color = Color(0xFF78C842)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Text(
+                                                text = "µ",
+                                                color = Color.White,
+                                                fontSize = 42.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.size(14.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("Torrent", color = Color.White, fontWeight = FontWeight.Bold)
+                                        Text(torrentSourceSize, color = Color(0xFFC0C5D7))
+                                    }
+                                    Text(
+                                        text = "◉",
+                                        color = Color(0xFF00D9FF),
+                                        fontSize = 30.sp
+                                    )
+                                }
+                            }
+
+                            if (torrentError.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text(torrentError, color = Color(0xFFFF6B84))
+                            }
+                            if (torrentPreparing) {
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    CircularProgressIndicator(modifier = Modifier.size(22.dp))
+                                    Spacer(modifier = Modifier.size(10.dp))
+                                    Text("Finding peers and preparing video…", color = Color.White)
+                                }
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            TextButton(
+                                onClick = {
+                                    if (torrentPreparing) stopTorrent()
+                                    torrentSourceUrl = null
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) { Text("CLOSE", color = Color(0xFF00CFFF)) }
+                            TextButton(
+                                onClick = { startTorrent(download = false) },
+                                enabled = !torrentPreparing,
+                                modifier = Modifier.weight(1f)
+                            ) { Text("PLAY", color = Color(0xFF00CFFF)) }
+                            TextButton(
+                                onClick = { startTorrent(download = true) },
+                                enabled = !torrentPreparing,
+                                modifier = Modifier.weight(1f)
+                            ) { Text("DOWNLOAD", color = Color(0xFF00CFFF)) }
+                        }
                     }
                 }
             }
         }
     }
-
 
     @Composable
     private fun BrowserScreen() {
@@ -1528,10 +1635,14 @@ class MainActivity : ComponentActivity() {
                         settings.useWideViewPort = true
                         settings.mediaPlaybackRequiresUserGesture = false
                         webChromeClient = WebChromeClient()
-                        setDownloadListener { url, _, _, _, _ ->
-                            if (isTorrentSource(url)) {
-                                showTorrentSource(url)
+                        addJavascriptInterface(object {
+                            @JavascriptInterface
+                            fun openTorrent(url: String) {
+                                runOnUiThread { showTorrentSource(url) }
                             }
+                        }, "KTeleTorrent")
+                        setDownloadListener { url, _, _, _, _ ->
+                            showTorrentSource(url)
                         }
                         webViewClient = object : WebViewClient() {
                             override fun shouldOverrideUrlLoading(
@@ -1539,11 +1650,22 @@ class MainActivity : ComponentActivity() {
                                 request: WebResourceRequest
                             ): Boolean {
                                 val url = request.url.toString()
-                                if (isTorrentSource(url)) {
+                                if (normalizeTorrentSource(url) != null) {
                                     showTorrentSource(url)
                                     return true
                                 }
                                 return false
+                            }
+
+                            override fun shouldInterceptRequest(
+                                view: WebView,
+                                request: WebResourceRequest
+                            ): android.webkit.WebResourceResponse? {
+                                val url = request.url.toString()
+                                if (normalizeTorrentSource(url) != null) {
+                                    runOnUiThread { showTorrentSource(url) }
+                                }
+                                return super.shouldInterceptRequest(view, request)
                             }
 
                             override fun onPageFinished(
@@ -1551,6 +1673,7 @@ class MainActivity : ComponentActivity() {
                                 url: String
                             ) {
                                 urlText = url
+                                view.evaluateJavascript(TORRENT_LINK_HOOK, null)
                             }
                         }
                         loadUrl(initialUrl)
