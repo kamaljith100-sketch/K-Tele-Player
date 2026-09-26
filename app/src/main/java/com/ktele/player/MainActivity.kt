@@ -410,8 +410,11 @@ private const val TORRENT_LINK_HOOK = """
     document.addEventListener('click', function(event) {
         var node = event.target.closest && event.target.closest('a,button,[data-href],[data-url]');
         if (!node) return;
-        var link = node.href || node.getAttribute('data-href') || node.getAttribute('data-url') || '';
-        if (link && (link.toLowerCase().indexOf('magnet:') === 0 || link.toLowerCase().indexOf('.torrent') >= 0)) {
+        var link = node.getAttribute('href') || node.getAttribute('data-href') || node.getAttribute('data-url') || node.href || '';
+        var lowerLink = link.toLowerCase();
+        if (link && (lowerLink.indexOf('magnet:') === 0 || lowerLink.indexOf('.torrent') >= 0 || lowerLink.indexOf('intent://') === 0)) {
+            event.preventDefault();
+            event.stopPropagation();
             if (window.KTeleTorrent) window.KTeleTorrent.openTorrent(link);
         }
     }, true);
@@ -881,17 +884,26 @@ class MainActivity : ComponentActivity() {
 
 
     private fun normalizeTorrentSource(rawUrl: String): String? {
-        val decoded = Uri.decode(rawUrl.trim())
+        var decoded = rawUrl.trim()
+        repeat(3) {
+            val next = Uri.decode(decoded).replace("&amp;", "&")
+            if (next == decoded) return@repeat
+            decoded = next
+        }
+
         if (isTorrentSource(decoded)) {
             return decoded
         }
 
         if (decoded.startsWith("intent://", ignoreCase = true)) {
-            val fallback = decoded.substringAfter("S.browser_fallback_url=", "")
-                .substringBefore(";")
-            val candidate = Uri.decode(fallback)
-            if (isTorrentSource(candidate)) {
-                return candidate
+            val marker = "s.browser_fallback_url="
+            val start = decoded.lowercase().indexOf(marker)
+            if (start >= 0) {
+                val fallback = decoded.substring(start + marker.length).substringBefore(";")
+                val candidate = Uri.decode(fallback).replace("&amp;", "&")
+                if (isTorrentSource(candidate)) {
+                    return candidate
+                }
             }
         }
 
@@ -900,7 +912,7 @@ class MainActivity : ComponentActivity() {
 
 
     private fun isTorrentSource(rawUrl: String): Boolean {
-        val value = Uri.decode(rawUrl.trim())
+        val value = rawUrl.trim().replace("&amp;", "&")
         return value.startsWith("magnet:", ignoreCase = true) ||
             value.substringBefore("?").substringBefore("#")
                 .endsWith(".torrent", ignoreCase = true) ||
@@ -1559,7 +1571,7 @@ class MainActivity : ComponentActivity() {
                 return
             }
 
-            if (isTorrentSource(trimmed)) {
+            if (normalizeTorrentSource(trimmed) != null) {
                 showTorrentSource(trimmed)
                 return
             }
@@ -1678,6 +1690,18 @@ class MainActivity : ComponentActivity() {
                                 request: WebResourceRequest
                             ): Boolean {
                                 val url = request.url.toString()
+                                if (normalizeTorrentSource(url) != null) {
+                                    showTorrentSource(url)
+                                    return true
+                                }
+                                return false
+                            }
+
+                            @Suppress("DEPRECATION")
+                            override fun shouldOverrideUrlLoading(
+                                view: WebView,
+                                url: String
+                            ): Boolean {
                                 if (normalizeTorrentSource(url) != null) {
                                     showTorrentSource(url)
                                     return true
