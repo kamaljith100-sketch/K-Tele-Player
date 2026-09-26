@@ -2119,13 +2119,19 @@ class MainActivity : ComponentActivity() {
         }
 
         val normalizedQuery = searchQuery.trim()
-        val visibleChannels = if (normalizedQuery.isNotEmpty()) {
+        val matchingChannels = if (normalizedQuery.isNotEmpty()) {
             iptvChannels.filter { channel ->
                 channel.name.contains(normalizedQuery, ignoreCase = true) ||
                     channel.category.contains(normalizedQuery, ignoreCase = true)
             }
         } else {
-            iptvChannels.filter { channel -> favoriteUrls.contains(channel.streamUrl) }
+            iptvChannels
+        }
+        val favoriteChannels = matchingChannels.filter { channel ->
+            favoriteUrls.contains(channel.streamUrl)
+        }
+        val otherChannels = matchingChannels.filterNot { channel ->
+            favoriteUrls.contains(channel.streamUrl)
         }
 
         if (selectedChannel != null) {
@@ -2178,12 +2184,12 @@ class MainActivity : ComponentActivity() {
                 ) {
                     CircularProgressIndicator()
                 }
-            } else if (visibleChannels.isEmpty()) {
+            } else if (matchingChannels.isEmpty()) {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(20.dp)) {
                         Text(
                             if (searchQuery.trim().isEmpty()) {
-                                "No favourite channels"
+                                "No channels loaded"
                             } else {
                                 "No channels match \"$searchQuery\""
                             },
@@ -2194,7 +2200,7 @@ class MainActivity : ComponentActivity() {
                             if (searchQuery.trim().isNotEmpty()) {
                                 "Try another channel name or clear the search."
                             } else {
-                                "Search for a channel and tap the star to add it to Favorites."
+                                "Load channels from Settings to see them here."
                             },
                             color = Color(0xFFB9C2D0)
                         )
@@ -2205,30 +2211,71 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(visibleChannels, key = { it.streamUrl }) { channel ->
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { selectedChannel = channel }
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(14.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(channel.name, style = MaterialTheme.typography.titleMedium)
-                                }
-                                TextButton(onClick = { toggleFavorite(channel) }) {
-                                    Text(if (favoriteUrls.contains(channel.streamUrl)) "★" else "☆")
-                                }
-                                Button(onClick = { selectedChannel = channel }) {
-                                    Text("Play")
-                                }
-                            }
+                    if (favoriteChannels.isNotEmpty()) {
+                        item {
+                            Text(
+                                "Favorites",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = Color(0xFF13CFF0),
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        }
+                        items(favoriteChannels, key = { "favorite-" + it.streamUrl }) { channel ->
+                            IptvChannelRow(
+                                channel = channel,
+                                isFavorite = true,
+                                onToggleFavorite = { toggleFavorite(channel) },
+                                onPlay = { selectedChannel = channel }
+                            )
                         }
                     }
+                    if (otherChannels.isNotEmpty()) {
+                        item {
+                            Text(
+                                if (normalizedQuery.isEmpty()) "All channels" else "Other results",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = Color(0xFFB9C2D0),
+                                modifier = Modifier.padding(top = 8.dp)
+                            )
+                        }
+                        items(otherChannels, key = { "other-" + it.streamUrl }) { channel ->
+                            IptvChannelRow(
+                                channel = channel,
+                                isFavorite = false,
+                                onToggleFavorite = { toggleFavorite(channel) },
+                                onPlay = { selectedChannel = channel }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @Composable
+    private fun IptvChannelRow(
+        channel: IptvChannel,
+        isFavorite: Boolean,
+        onToggleFavorite: () -> Unit,
+        onPlay: () -> Unit
+    ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onPlay)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(channel.name, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                TextButton(onClick = onToggleFavorite) {
+                    Text(if (isFavorite) "★" else "☆")
+                }
+                Button(onClick = onPlay) {
+                    Text("Play")
                 }
             }
         }
