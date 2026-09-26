@@ -180,6 +180,14 @@ private val catalogCategories = listOf(
 
 private const val MALAYALAM_RADIO_URL = "https://radiosindia.com/malayalamradio.html"
 
+private fun isMalayalamRadioPageUrl(rawUrl: String): Boolean {
+    val uri = runCatching { Uri.parse(rawUrl) }.getOrNull() ?: return false
+    val host = uri.host?.lowercase() ?: return false
+    return uri.scheme.equals("https", ignoreCase = true) &&
+        (host == "radiosindia.com" || host == "www.radiosindia.com") &&
+        uri.path?.trimEnd('/') == "/malayalamradio.html"
+}
+
 // Demo entries are open/licensed films. Replace or extend these with your own licensed catalog.
 private val catalogMovies = listOf(
     CatalogMovie(
@@ -680,6 +688,7 @@ class MainActivity : ComponentActivity() {
 
     private var browserOpen by mutableStateOf(false)
     private var selectedBrowserUrl by mutableStateOf<String?>(null)
+    private var radioOnlyMode by mutableStateOf(false)
     private var iptvOpen by mutableStateOf(false)
     private var settingsOpen by mutableStateOf(false)
     private var homeOpen by mutableStateOf(true)
@@ -2463,8 +2472,9 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun openInAppBrowser(url: String) {
+    private fun openInAppBrowser(url: String, radioOnly: Boolean = false) {
         selectedBrowserUrl = url
+        radioOnlyMode = radioOnly
         homeOpen = false
         menuOpen = false
         mediaHubOpen = false
@@ -2766,7 +2776,7 @@ class MainActivity : ComponentActivity() {
                     )
                     Spacer(modifier = Modifier.height(14.dp))
                     Button(onClick = {
-                        openInAppBrowser(MALAYALAM_RADIO_URL)
+                        openInAppBrowser(MALAYALAM_RADIO_URL, radioOnly = true)
                     }) {
                         Text("Open Malayalam Radio")
                     }
@@ -2883,6 +2893,8 @@ class MainActivity : ComponentActivity() {
             val trimmed = rawUrl.trim()
             if (trimmed.isEmpty()) return
 
+            if (radioOnlyMode && !isMalayalamRadioPageUrl(trimmed)) return
+
             if (normalizeTorrentSource(trimmed) != null) {
                 showTorrentSource(trimmed)
                 return
@@ -2935,6 +2947,7 @@ class MainActivity : ComponentActivity() {
                 urlText = initialUrl
             } else {
                 selectedBrowserUrl = null
+                radioOnlyMode = false
                 browserOpen = false
             }
         }
@@ -3071,6 +3084,7 @@ class MainActivity : ComponentActivity() {
                         browserView?.destroy()
                         browserView = null
                         selectedBrowserUrl = null
+                        radioOnlyMode = false
                         browserHome = true
                     }) {
                         Text("Home")
@@ -3128,6 +3142,7 @@ class MainActivity : ComponentActivity() {
                                 request: WebResourceRequest
                             ): Boolean {
                                 val url = request.url.toString()
+                                if (radioOnlyMode && !isMalayalamRadioPageUrl(url)) return true
                                 if (normalizeTorrentSource(url) != null) {
                                     showTorrentSource(url)
                                     return true
@@ -3143,6 +3158,7 @@ class MainActivity : ComponentActivity() {
                                 view: WebView,
                                 url: String
                             ): Boolean {
+                                if (radioOnlyMode && !isMalayalamRadioPageUrl(url)) return true
                                 if (normalizeTorrentSource(url) != null) {
                                     showTorrentSource(url)
                                     return true
