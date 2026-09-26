@@ -323,17 +323,22 @@ class TdFileDataSource(
 
 class TorrentDataSource(
     private val torrent: Torrent,
-    private val fileSize: Long
+    private val knownFileSize: Long
 ) : BaseDataSource(true) {
 
     private var currentUri: Uri? = null
     private var input: InputStream? = null
     private var position = 0L
+    private var endPosition = Long.MAX_VALUE
+    private var opened = false
 
     override fun open(dataSpec: DataSpec): Long {
         currentUri = dataSpec.uri
         transferInitializing(dataSpec)
 
+        // TorrentStream exposes a blocking stream. Do not use File.length() as
+        // the EOF boundary: during streaming it can describe only the sparse
+        // portion already written, while the torrent stream is still growing.
         val stream = torrent.getVideoStream()
         var toSkip = dataSpec.position
         while (toSkip > 0L) {
@@ -349,23 +354,35 @@ class TorrentDataSource(
 
         input = stream
         position = dataSpec.position
+        endPosition = if (dataSpec.length != C.LENGTH_UNSET.toLong()) {
+            dataSpec.position + dataSpec.length
+        } else {
+            Long.MAX_VALUE
+        }
+        opened = true
         transferStarted(dataSpec)
 
-        val remaining = maxOf(0L, fileSize - position)
-        return if (dataSpec.length != C.LENGTH_UNSET.toLong()) {
-            minOf(dataSpec.length, remaining)
+        if (dataSpec.length != C.LENGTH_UNSET.toLong()) {
+            return dataSpec.length
+        }
+
+        // Report the best known length when available, but let read() decide
+        // EOF so a stale/incomplete File.length() cannot stop playback.
+        val currentLength = maxOf(knownFileSize, torrent.videoFile.length())
+        return if (currentLength > dataSpec.position) {
+            currentLength - dataSpec.position
         } else {
-            remaining
+            C.LENGTH_UNSET.toLong()
         }
     }
 
     override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
         if (length == 0) return 0
         val stream = input ?: throw IOException("Torrent stream is not open")
-        val remaining = fileSize - position
-        if (remaining <= 0L) return C.RESULT_END_OF_INPUT
+        if (position >= endPosition) return C.RESULT_END_OF_INPUT
 
-        val count = stream.read(buffer, offset, minOf(length.toLong(), remaining).toInt())
+        val allowed = minOf(length.toLong(), endPosition - position).toInt()
+        val count = stream.read(buffer, offset, allowed)
         if (count == -1) return C.RESULT_END_OF_INPUT
 
         position += count
@@ -379,7 +396,10 @@ class TorrentDataSource(
         input?.close()
         input = null
         currentUri = null
-        transferEnded()
+        if (opened) {
+            opened = false
+            transferEnded()
+        }
     }
 }
 
@@ -484,7 +504,9 @@ class MainActivity : ComponentActivity() {
 
                 override fun onStreamError(torrent: Torrent?, e: Exception?) {
                     torrentPreparing = false
-                    torrentError = e?.message ?: "Could not start torrent"
+                    torrentError = e?.let { error ->
+                        "Torrent error: ${error.message ?: error.javaClass.simpleName}"
+                    } ?: "Could not start torrent"
                 }
 
                 override fun onStreamReady(torrent: Torrent?) {
@@ -932,7 +954,13 @@ class MainActivity : ComponentActivity() {
         torrentPreparing = true
         torrentError = ""
         torrentProgress = 0
-        torrentStream?.startStream(source)
+        try {
+            val stream = torrentStream ?: throw IllegalStateException("Torrent engine is not initialized")
+            stream.startStream(source)
+        } catch (e: Throwable) {
+            torrentPreparing = false
+            torrentError = "Could not start torrent: ${e.message ?: e.javaClass.simpleName}"
+        }
     }
 
 
