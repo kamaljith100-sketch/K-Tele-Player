@@ -214,6 +214,17 @@ private val catalogMovies = listOf(
     )
 )
 
+private data class MovieSite(
+    val name: String,
+    val url: String
+)
+
+private val movieSites = listOf(
+    MovieSite("AutoEmbed", "https://watch-v2.autoembed.app/"),
+    MovieSite("NetMirror", "https://netmirror.center/"),
+    MovieSite("Cineby", "https://cineby.my/movies")
+)
+
 data class VideoItem(
 
     val messageId: Long,
@@ -597,6 +608,7 @@ class MainActivity : ComponentActivity() {
     private var playing by mutableStateOf<VideoItem?>(null)
 
     private var browserOpen by mutableStateOf(false)
+    private var selectedBrowserUrl by mutableStateOf<String?>(null)
     private var iptvOpen by mutableStateOf(false)
     private var mediaHubOpen by mutableStateOf(false)
     private var selectedCatalogMovie by mutableStateOf<CatalogMovie?>(null)
@@ -2104,6 +2116,12 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun openMovieSite(url: String) {
+        selectedBrowserUrl = url
+        mediaHubOpen = false
+        browserOpen = true
+    }
+
     @Composable
     private fun MediaHubScreen() {
         BackHandler { mediaHubOpen = false }
@@ -2158,6 +2176,33 @@ class MainActivity : ComponentActivity() {
 
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(20.dp)) {
+                    Text("Movies", style = MaterialTheme.typography.titleLarge)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        "Open a movie site in K-Tele's built-in browser.",
+                        color = Color(0xFFB9C2D0)
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        movieSites.forEach { site ->
+                            TextButton(
+                                onClick = { openMovieSite(site.url) },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(site.name, maxLines = 1)
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(20.dp)) {
                     Text("Open Browser", style = MaterialTheme.typography.titleLarge)
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
@@ -2168,6 +2213,7 @@ class MainActivity : ComponentActivity() {
                     Button(
                         onClick = {
                             mediaHubOpen = false
+                            selectedBrowserUrl = null
                             browserOpen = true
                         }
                     ) {
@@ -2184,11 +2230,11 @@ class MainActivity : ComponentActivity() {
         val bookmarkPreferences = remember(browserContext) {
             browserContext.getSharedPreferences("browser_bookmarks", Context.MODE_PRIVATE)
         }
-        val initialUrl = "https://www.google.com"
-        var urlText by remember { mutableStateOf(initialUrl) }
+        val initialUrl = selectedBrowserUrl ?: "https://www.google.com"
+        var urlText by remember(initialUrl) { mutableStateOf(initialUrl) }
         var searchQuery by remember { mutableStateOf("") }
-        var browserStartUrl by remember { mutableStateOf(initialUrl) }
-        var browserHome by remember { mutableStateOf(true) }
+        var browserStartUrl by remember(initialUrl) { mutableStateOf(initialUrl) }
+        var browserHome by remember(initialUrl) { mutableStateOf(selectedBrowserUrl == null) }
         var browserView by remember { mutableStateOf<WebView?>(null) }
         var bookmarks by remember(bookmarkPreferences) {
             mutableStateOf(
@@ -2292,6 +2338,7 @@ class MainActivity : ComponentActivity() {
                 browserHome = true
                 urlText = initialUrl
             } else {
+                selectedBrowserUrl = null
                 browserOpen = false
             }
         }
@@ -2325,7 +2372,10 @@ class MainActivity : ComponentActivity() {
                     Spacer(modifier = Modifier.size(10.dp))
                     Text("K-fast", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.weight(1f))
-                    TextButton(onClick = { browserOpen = false }) { Text("Home") }
+                    TextButton(onClick = {
+                        selectedBrowserUrl = null
+                        browserOpen = false
+                    }) { Text("Home") }
                 }
 
                 Column(
@@ -2414,6 +2464,7 @@ class MainActivity : ComponentActivity() {
                         browserView?.stopLoading()
                         browserView?.destroy()
                         browserView = null
+                        selectedBrowserUrl = null
                         browserHome = true
                     }) {
                         Text("Home")
