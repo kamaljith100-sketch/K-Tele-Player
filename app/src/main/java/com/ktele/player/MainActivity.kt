@@ -2132,6 +2132,17 @@ class MainActivity : ComponentActivity() {
             view?.loadUrl(target)
         }
 
+        fun addBookmark() {
+            val value = urlText.trim()
+            if (
+                (value.startsWith("http://", ignoreCase = true) ||
+                    value.startsWith("https://", ignoreCase = true)) &&
+                !bookmarks.contains(value)
+            ) {
+                bookmarks = bookmarks + value
+            }
+        }
+
         BackHandler {
             val view = browserView
             if (view?.canGoBack() == true) {
@@ -2324,6 +2335,9 @@ class MainActivity : ComponentActivity() {
                     Button(onClick = { openUrl(urlText, browserView) }) {
                         Text("Go")
                     }
+                    TextButton(onClick = { addBookmark() }) {
+                        Text("☆")
+                    }
                 }
 
                 Row(
@@ -2331,6 +2345,7 @@ class MainActivity : ComponentActivity() {
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     TextButton(onClick = { browserView?.goBack() }) { Text("Back") }
+                    TextButton(onClick = { addBookmark() }) { Text("Bookmark") }
                     TextButton(onClick = { browserView?.goForward() }) { Text("Forward") }
                     TextButton(onClick = { browserView?.reload() }) { Text("Reload") }
                 }
