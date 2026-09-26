@@ -1260,6 +1260,7 @@ class MainActivity : ComponentActivity() {
             it.id == subtitleColorId
         } ?: subtitleColorPresets.first()
         val activity = context as? Activity
+        var isLandscape by remember(item.fileId) { mutableStateOf(true) }
 
         var error by remember {
             mutableStateOf("")
@@ -1311,6 +1312,14 @@ class MainActivity : ComponentActivity() {
 
                 activity?.requestedOrientation =
                     ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            }
+        }
+
+        LaunchedEffect(isLandscape) {
+            activity?.requestedOrientation = if (isLandscape) {
+                ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            } else {
+                ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             }
         }
 
@@ -1538,14 +1547,18 @@ class MainActivity : ComponentActivity() {
                 modifier = Modifier.fillMaxSize()
             )
 
-            if (!isVideoPlaying) {
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(16.dp),
-                    horizontalAlignment = Alignment.End,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(16.dp),
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(onClick = { isLandscape = !isLandscape }) {
+                    Text(if (isLandscape) "Rotate to Portrait" else "Rotate to Landscape")
+                }
+
+                if (!isVideoPlaying) {
                     Button(
                         onClick = {
                             showSubtitleColorOptions = !showSubtitleColorOptions
@@ -1553,7 +1566,7 @@ class MainActivity : ComponentActivity() {
                     ) {
                         Text("Subtitle: ${selectedSubtitlePreset.label}")
                     }
-    
+
                     if (showSubtitleColorOptions) {
                         Surface(
                             color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
