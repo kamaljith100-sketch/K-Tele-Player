@@ -7,6 +7,10 @@ import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.os.Bundle
 import android.os.SystemClock
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebView
+import android.webkit.WebViewClient
 
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -17,6 +21,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -327,6 +332,8 @@ class MainActivity : ComponentActivity() {
     )
 
     private var playing by mutableStateOf<VideoItem?>(null)
+
+    private var browserOpen by mutableStateOf(false)
 
 
     override fun onCreate(
@@ -722,10 +729,10 @@ class MainActivity : ComponentActivity() {
     private fun Screen() {
         val currentVideo = playing
 
-        if (currentVideo != null) {
-            PlayerScreen(currentVideo)
-        } else {
-            ListScreen()
+        when {
+            currentVideo != null -> PlayerScreen(currentVideo)
+            browserOpen -> BrowserScreen()
+            else -> ListScreen()
         }
     }
 
@@ -1093,6 +1100,144 @@ class MainActivity : ComponentActivity() {
 
 
     @Composable
+    private fun BrowserScreen() {
+        val initialUrl = "https://www.google.com"
+        var urlText by remember { mutableStateOf(initialUrl) }
+        var browserView by remember { mutableStateOf<WebView?>(null) }
+
+        fun openUrl(rawUrl: String, view: WebView?) {
+            val trimmed = rawUrl.trim()
+            if (trimmed.isEmpty()) {
+                return
+            }
+
+            val target = if (
+                trimmed.startsWith("http://") ||
+                trimmed.startsWith("https://")
+            ) {
+                trimmed
+            } else {
+                "https://www.google.com/search?q=" + Uri.encode(trimmed)
+            }
+
+            urlText = target
+            view?.loadUrl(target)
+        }
+
+        BackHandler {
+            val view = browserView
+            if (view?.canGoBack() == true) {
+                view.goBack()
+            } else {
+                browserOpen = false
+            }
+        }
+
+        DisposableEffect(Unit) {
+            onDispose {
+                browserView?.stopLoading()
+                browserView?.destroy()
+            }
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Button(
+                    onClick = { browserOpen = false }
+                ) {
+                    Text("Home")
+                }
+
+                Spacer(
+                    modifier = Modifier.size(8.dp)
+                )
+
+                OutlinedTextField(
+                    value = urlText,
+                    onValueChange = { urlText = it },
+                    label = { Text("Website or search") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f)
+                )
+
+                Spacer(
+                    modifier = Modifier.size(8.dp)
+                )
+
+                Button(
+                    onClick = { openUrl(urlText, browserView) }
+                ) {
+                    Text("Go")
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                TextButton(
+                    onClick = { browserView?.goBack() }
+                ) {
+                    Text("Back")
+                }
+
+                TextButton(
+                    onClick = { browserView?.goForward() }
+                ) {
+                    Text("Forward")
+                }
+
+                TextButton(
+                    onClick = { browserView?.reload() }
+                ) {
+                    Text("Reload")
+                }
+            }
+
+            AndroidView(
+                factory = { viewContext ->
+                    WebView(viewContext).apply {
+                        settings.javaScriptEnabled = true
+                        settings.domStorageEnabled = true
+                        settings.loadWithOverviewMode = true
+                        settings.useWideViewPort = true
+                        settings.mediaPlaybackRequiresUserGesture = false
+                        webChromeClient = WebChromeClient()
+                        webViewClient = object : WebViewClient() {
+                            override fun shouldOverrideUrlLoading(
+                                view: WebView,
+                                request: WebResourceRequest
+                            ): Boolean {
+                                return false
+                            }
+
+                            override fun onPageFinished(
+                                view: WebView,
+                                url: String
+                            ) {
+                                urlText = url
+                            }
+                        }
+                        loadUrl(initialUrl)
+                        browserView = this
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .weight(1f)
+            )
+        }
+    }
+
+
+    @Composable
         private fun ListScreen() {
             var input by remember {
                 mutableStateOf("")
@@ -1149,6 +1294,16 @@ class MainActivity : ComponentActivity() {
                                 text = "Your chats",
                                 style = MaterialTheme.typography.titleMedium
                             )
+
+                            Spacer(
+                                modifier = Modifier.height(12.dp)
+                            )
+
+                            Button(
+                                onClick = { browserOpen = true }
+                            ) {
+                                Text("Open Browser")
+                            }
 
                             val savedMessagesId = savedMessagesChatId
                             val orderedChatIds =
