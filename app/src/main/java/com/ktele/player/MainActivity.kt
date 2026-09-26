@@ -2050,18 +2050,11 @@ class MainActivity : ComponentActivity() {
         var browserStartUrl by remember { mutableStateOf(initialUrl) }
         var browserHome by remember { mutableStateOf(true) }
         var browserView by remember { mutableStateOf<WebView?>(null) }
-        var selectedProvider by remember { mutableStateOf("All legal providers") }
         var bookmarks by remember(bookmarkPreferences) {
             mutableStateOf(
                 bookmarkPreferences.getStringSet("urls", emptySet())?.toList().orEmpty()
             )
         }
-        val providerOptions = listOf(
-            "All legal providers",
-            "Internet Archive",
-            "Wikimedia Commons",
-            "Blender Open Movies"
-        )
 
         fun handleSpecialUrl(rawUrl: String, view: WebView?): Boolean {
             val trimmed = rawUrl.trim()
@@ -2122,16 +2115,7 @@ class MainActivity : ComponentActivity() {
             ) {
                 trimmed
             } else {
-                when (selectedProvider) {
-                    "Internet Archive" ->
-                        "https://archive.org/advancedsearch.php?q=$encodedQuery&output=html"
-                    "Wikimedia Commons" ->
-                        "https://commons.wikimedia.org/w/index.php?search=$encodedQuery&title=Special:MediaSearch&type=video"
-                    "Blender Open Movies" ->
-                        "https://studio.blender.org/films/"
-                    else ->
-                        "https://www.google.com/search?q=$encodedQuery"
-                }
+                "https://www.google.com/search?q=$encodedQuery"
             }
 
             urlText = target
@@ -2217,7 +2201,7 @@ class MainActivity : ComponentActivity() {
                     OutlinedTextField(
                         value = searchQuery,
                         onValueChange = { searchQuery = it },
-                        label = { Text("Search web or legal provider query") },
+                        label = { Text("Search Google") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                         trailingIcon = {
@@ -2225,38 +2209,6 @@ class MainActivity : ComponentActivity() {
                                 Text("Go")
                             }
                         }
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Button(
-                            onClick = {
-                                val current = providerOptions.indexOf(selectedProvider)
-                                selectedProvider = providerOptions[(current + 1) % providerOptions.size]
-                            },
-                            shape = RoundedCornerShape(18.dp)
-                        ) {
-                            Text(selectedProvider)
-                        }
-                        Button(
-                            onClick = { openUrl(searchQuery, null) },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(18.dp)
-                        ) {
-                            Text("Search selected provider")
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        "Legal providers • Internet Archive • Wikimedia Commons • Blender Open Movies",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFFB9C2D0)
                     )
 
                     Spacer(modifier = Modifier.height(24.dp))
@@ -2275,7 +2227,7 @@ class MainActivity : ComponentActivity() {
                             if (bookmarks.isEmpty()) {
                                 Text("No bookmarks yet", style = MaterialTheme.typography.titleMedium)
                                 Text(
-                                    "Search a legal provider and tap Add Bookmark to save it.",
+                                    "Search Google and tap Add Bookmark to save it.",
                                     color = Color(0xFFB9C2D0)
                                 )
                             } else {
