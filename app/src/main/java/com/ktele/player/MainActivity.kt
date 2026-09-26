@@ -691,6 +691,7 @@ class MainActivity : ComponentActivity() {
     private var iptvLoading by mutableStateOf(false)
     private var iptvError by mutableStateOf("")
     private var selectedCatalogMovie by mutableStateOf<CatalogMovie?>(null)
+    private var selectedMusic by mutableStateOf<IptvChannel?>(null)
 
     private var torrentStream: TorrentStream? = null
     private var torrentSourceUrl by mutableStateOf<String?>(null)
@@ -1309,6 +1310,10 @@ class MainActivity : ComponentActivity() {
 
         when {
             currentVideo != null -> PlayerScreen(currentVideo)
+            selectedMusic != null -> IptvPlayerScreen(
+                channel = selectedMusic!!,
+                onClose = { selectedMusic = null }
+            )
             homeOpen -> HomeScreen()
             menuOpen -> MainMenuScreen()
             mediaHubOpen -> MediaHubScreen()
@@ -2406,6 +2411,13 @@ class MainActivity : ComponentActivity() {
         var playerError by remember(channel.streamUrl) { mutableStateOf("") }
         val player = remember(channel.streamUrl) {
             ExoPlayer.Builder(context).build().apply {
+                setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                        .setUsage(C.USAGE_MEDIA)
+                        .build(),
+                    true
+                )
                 setMediaItem(MediaItem.fromUri(channel.streamUrl))
                 playWhenReady = true
                 addListener(object : Player.Listener {
@@ -2746,16 +2758,38 @@ class MainActivity : ComponentActivity() {
             Spacer(modifier = Modifier.height(16.dp))
 
             Card(modifier = Modifier.fillMaxWidth()) {
+                var musicUrl by remember { mutableStateOf("") }
+
                 Column(modifier = Modifier.padding(20.dp)) {
-                    Text("Music", style = MaterialTheme.typography.titleLarge)
+                    Text("Music Player", style = MaterialTheme.typography.titleLarge)
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        "Listen to music online.",
+                        "Paste a direct music link and play it with the existing player.",
                         color = Color(0xFFB9C2D0)
                     )
                     Spacer(modifier = Modifier.height(14.dp))
-                    Button(onClick = { openMovieSite("https://listenfree.in/") }) {
-                        Text("Open Music")
+                    OutlinedTextField(
+                        value = musicUrl,
+                        onValueChange = { musicUrl = it },
+                        label = { Text("Direct music link") },
+                        placeholder = { Text("https://...mp3 or .m3u8") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Button(
+                        enabled = musicUrl.trim().isNotEmpty(),
+                        onClick = {
+                            val url = musicUrl.trim()
+                            selectedMusic = IptvChannel(
+                                name = "Music",
+                                category = "Songs",
+                                streamUrl = url
+                            )
+                            mediaHubOpen = false
+                        }
+                    ) {
+                        Text("Play Music")
                     }
                 }
             }
