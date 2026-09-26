@@ -666,7 +666,9 @@ class MainActivity : ComponentActivity() {
     private var selectedBrowserUrl by mutableStateOf<String?>(null)
     private var iptvOpen by mutableStateOf(false)
     private var settingsOpen by mutableStateOf(false)
+    private var homeOpen by mutableStateOf(true)
     private var mediaHubOpen by mutableStateOf(false)
+    private var telegramLoginOpen by mutableStateOf(false)
     private var iptvPlaylistUrl by mutableStateOf(DEFAULT_IPTV_PLAYLIST_URL)
     private var iptvChannels by mutableStateOf<List<IptvChannel>>(emptyList())
     private var iptvLoading by mutableStateOf(false)
@@ -1290,7 +1292,9 @@ class MainActivity : ComponentActivity() {
 
         when {
             currentVideo != null -> PlayerScreen(currentVideo)
+            homeOpen -> HomeScreen()
             mediaHubOpen -> MediaHubScreen()
+            telegramLoginOpen -> TelegramLoginScreen()
             browserOpen -> {
                 Box(modifier = Modifier.fillMaxSize()) {
                     BrowserScreen()
@@ -1885,6 +1889,17 @@ class MainActivity : ComponentActivity() {
                 .fillMaxSize()
                 .padding(20.dp)
         ) {
+            Image(
+                painter = painterResource(id = R.drawable.ktele_player_logo),
+                contentDescription = "K-Tele Player logo",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .size(104.dp)
+                    .align(Alignment.CenterHorizontally)
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -2436,6 +2451,120 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
+    private fun HomeScreen() {
+        val openMedia: () -> Unit = {
+            homeOpen = false
+            mediaHubOpen = true
+        }
+
+        LaunchedEffect(Unit) {
+            delay(1400)
+            openMedia()
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clickable { openMedia() },
+            contentAlignment = Alignment.Center
+        ) {
+            Image(
+                painter = painterResource(id = R.drawable.ktele_player_logo),
+                contentDescription = "K-Tele Player logo",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.size(220.dp)
+            )
+        }
+    }
+
+    @Composable
+    private fun TelegramLoginScreen() {
+        var input by remember { mutableStateOf("") }
+
+        BackHandler {
+            telegramLoginOpen = false
+            mediaHubOpen = true
+        }
+
+        LaunchedEffect(stage) {
+            if (stage == "ready") {
+                telegramLoginOpen = false
+                mediaHubOpen = false
+            }
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp),
+            verticalArrangement = Arrangement.Center
+        ) {
+            Image(
+                painter = painterResource(id = R.drawable.ktele_player_logo),
+                contentDescription = "K-Tele Player logo",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .size(176.dp)
+                    .align(Alignment.CenterHorizontally)
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Text(
+                text = "Telegram Login",
+                style = MaterialTheme.typography.headlineMedium
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            if (stage == "starting") {
+                CircularProgressIndicator()
+                Spacer(modifier = Modifier.height(12.dp))
+                Text("Starting Telegram...")
+            } else if (stage == "error") {
+                Text(message.ifBlank { "Something went wrong" })
+            } else {
+                val label = when (stage) {
+                    "phone" -> "Phone number (with country code, e.g. +91...)"
+                    "code" -> "Login code from Telegram"
+                    else -> "Two-step verification password"
+                }
+
+                OutlinedTextField(
+                    value = input,
+                    onValueChange = { input = it },
+                    label = { Text(label) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Text(
+                    text = "ടെലിഗ്രാം വീഡിയോസ് കാണുന്നതിനായി ലോഗിൻ ചെയ്യുക",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color(0xFFB9C2D0)
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Button(
+                    onClick = {
+                        submit(input)
+                        input = ""
+                    }
+                ) {
+                    Text("Next")
+                }
+            }
+
+            if (message.isNotEmpty() && stage != "error") {
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(message)
+            }
+        }
+    }
+
+    @Composable
     private fun MediaHubScreen() {
         BackHandler { mediaHubOpen = false }
 
@@ -2462,7 +2591,10 @@ class MainActivity : ComponentActivity() {
                     TextButton(onClick = { mediaHubOpen = false; settingsOpen = true }) {
                         Text("Settings")
                     }
-                    TextButton(onClick = { mediaHubOpen = false }) {
+                    TextButton(onClick = {
+                        mediaHubOpen = false
+                        homeOpen = true
+                    }) {
                         Text("Home")
                     }
                 }
@@ -2513,6 +2645,28 @@ class MainActivity : ComponentActivity() {
                                 Text(site.name, maxLines = 1)
                             }
                         }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Text("Telegram Videos", style = MaterialTheme.typography.titleLarge)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        "Login to watch your Telegram videos.",
+                        color = Color(0xFFB9C2D0)
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Button(
+                        onClick = {
+                            mediaHubOpen = false
+                            telegramLoginOpen = true
+                        }
+                    ) {
+                        Text("Telegram Login")
                     }
                 }
             }
