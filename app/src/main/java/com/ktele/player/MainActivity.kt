@@ -2803,10 +2803,10 @@ class MainActivity : ComponentActivity() {
 
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(20.dp)) {
-                    Text("Open Browser", style = MaterialTheme.typography.titleLarge)
+                    Text("Torrent Video Browser", style = MaterialTheme.typography.titleLarge)
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        "Open a website or search the web inside the app.",
+                        "Open torrent video websites or search the web inside the app.",
                         color = Color(0xFFB9C2D0)
                     )
                     Spacer(modifier = Modifier.height(14.dp))
@@ -2817,7 +2817,7 @@ class MainActivity : ComponentActivity() {
                             browserOpen = true
                         }
                     ) {
-                        Text("Open Browser")
+                        Text("Torrent Video Browser")
                     }
                 }
             }
