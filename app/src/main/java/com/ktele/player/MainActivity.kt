@@ -88,6 +88,7 @@ import com.github.se_bastiaan.torrentstream.listeners.TorrentListener
 
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
 import java.net.URLDecoder
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -152,7 +153,8 @@ data class VideoItem(
     val info: String,
     val fileId: Int,
     val size: Long,
-    val localPath: String? = null
+    val localPath: String? = null,
+    val torrent: Torrent? = null
 )
 
 // Keep player startup and rebuffer thresholds explicit.
@@ -316,6 +318,68 @@ class TdFileDataSource(
 }
 
 
+class TorrentDataSource(
+    private val torrent: Torrent,
+    private val fileSize: Long
+) : BaseDataSource(true) {
+
+    private var currentUri: Uri? = null
+    private var input: InputStream? = null
+    private var position = 0L
+
+    override fun open(dataSpec: DataSpec): Long {
+        currentUri = dataSpec.uri
+        transferInitializing(dataSpec)
+
+        val stream = torrent.getVideoStream()
+        var toSkip = dataSpec.position
+        while (toSkip > 0L) {
+            val skipped = stream.skip(toSkip)
+            if (skipped > 0L) {
+                toSkip -= skipped
+            } else if (stream.read() == -1) {
+                throw IOException("Could not seek in torrent video")
+            } else {
+                toSkip--
+            }
+        }
+
+        input = stream
+        position = dataSpec.position
+        transferStarted(dataSpec)
+
+        val remaining = maxOf(0L, fileSize - position)
+        return if (dataSpec.length != C.LENGTH_UNSET.toLong()) {
+            minOf(dataSpec.length, remaining)
+        } else {
+            remaining
+        }
+    }
+
+    override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+        if (length == 0) return 0
+        val stream = input ?: throw IOException("Torrent stream is not open")
+        val remaining = fileSize - position
+        if (remaining <= 0L) return C.RESULT_END_OF_INPUT
+
+        val count = stream.read(buffer, offset, minOf(length.toLong(), remaining).toInt())
+        if (count == -1) return C.RESULT_END_OF_INPUT
+
+        position += count
+        bytesTransferred(count)
+        return count
+    }
+
+    override fun getUri(): Uri? = currentUri
+
+    override fun close() {
+        input?.close()
+        input = null
+        currentUri = null
+        transferEnded()
+    }
+}
+
 class MainActivity : ComponentActivity() {
 
     private var client: Client? = null
@@ -421,7 +485,8 @@ class MainActivity : ComponentActivity() {
                             info = "Torrent  |  ${bytes / 1048576} MB",
                             fileId = -1,
                             size = bytes,
-                            localPath = videoFile.absolutePath
+                            localPath = videoFile.absolutePath,
+                            torrent = torrent
                         )
                         torrentSourceUrl = null
                     } else {
@@ -958,8 +1023,16 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        val player = remember(item.fileId, item.localPath) {
-            val source = if (item.localPath != null) {
+        val player = remember(item.fileId, item.localPath, item.torrent) {
+            val torrent = item.torrent
+            val source = if (torrent != null) {
+                val factory = DataSource.Factory {
+                    TorrentDataSource(torrent, item.size)
+                }
+                val uri = Uri.fromFile(File(item.localPath ?: torrent.videoFile.absolutePath))
+                ProgressiveMediaSource.Factory(factory)
+                    .createMediaSource(MediaItem.fromUri(uri))
+            } else if (item.localPath != null) {
                 ProgressiveMediaSource.Factory(
                     DefaultDataSource.Factory(context)
                 ).createMediaSource(
