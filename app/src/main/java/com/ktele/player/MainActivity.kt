@@ -265,14 +265,12 @@ private fun parseIptvPlaylist(contents: String): List<IptvChannel> {
                 pendingGroup = iptvGroupPattern.find(line)?.groupValues?.getOrNull(1).orEmpty()
             }
             line.isNotEmpty() && !line.startsWith("#") && pendingName.isNotEmpty() -> {
-                val category = normalizeIptvCategory(pendingGroup, pendingName)
-                if (category != null) {
-                    channels += IptvChannel(
-                        name = pendingName,
-                        category = category,
-                        streamUrl = line
-                    )
-                }
+                val category = normalizeIptvCategory(pendingGroup, pendingName) ?: "Other"
+                channels += IptvChannel(
+                    name = pendingName,
+                    category = category,
+                    streamUrl = line
+                )
                 pendingName = ""
                 pendingGroup = ""
             }
@@ -1907,6 +1905,16 @@ class MainActivity : ComponentActivity() {
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                label = { Text("Search channels") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
             LazyRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth()
@@ -2085,6 +2093,7 @@ class MainActivity : ComponentActivity() {
             context.getSharedPreferences("iptv_favorites", Context.MODE_PRIVATE)
         }
         var selectedCategory by remember { mutableStateOf("Favorites") }
+        var searchQuery by remember { mutableStateOf("") }
         var favoriteUrls by remember(favoritePreferences) {
             mutableStateOf(
                 favoritePreferences.getStringSet("urls", emptySet())?.toSet().orEmpty()
@@ -2111,11 +2120,19 @@ class MainActivity : ComponentActivity() {
             favoritePreferences.edit().putStringSet("urls", favoriteUrls).apply()
         }
 
-        val visibleChannels = iptvChannels.filter { channel ->
-            if (selectedCategory == "Favorites") {
-                favoriteUrls.contains(channel.streamUrl)
-            } else {
-                channel.category == selectedCategory
+        val normalizedQuery = searchQuery.trim()
+        val visibleChannels = if (normalizedQuery.isNotEmpty()) {
+            iptvChannels.filter { channel ->
+                channel.name.contains(normalizedQuery, ignoreCase = true) ||
+                    channel.category.contains(normalizedQuery, ignoreCase = true)
+            }
+        } else {
+            iptvChannels.filter { channel ->
+                if (selectedCategory == "Favorites") {
+                    favoriteUrls.contains(channel.streamUrl)
+                } else {
+                    channel.category == selectedCategory
+                }
             }
         }
 
@@ -2187,10 +2204,19 @@ class MainActivity : ComponentActivity() {
             } else if (visibleChannels.isEmpty()) {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(20.dp)) {
-                        Text("No channels in $selectedCategory", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            if (searchQuery.trim().isEmpty()) {
+                                "No channels in $selectedCategory"
+                            } else {
+                                "No channels match \"$searchQuery\""
+                            },
+                            style = MaterialTheme.typography.titleMedium
+                        )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            if (selectedCategory == "Favorites") {
+                            if (searchQuery.trim().isNotEmpty()) {
+                                "Try another channel name or clear the search."
+                            } else if (selectedCategory == "Favorites") {
                                 "Open a category and tap the star beside a channel to keep it here."
                             } else {
                                 "No channels were found in this category."
