@@ -2290,9 +2290,6 @@ class MainActivity : ComponentActivity() {
                     Button(onClick = { openUrl(urlText, browserView) }) {
                         Text("Go")
                     }
-                    TextButton(onClick = { addBookmark() }) {
-                        Text("☆")
-                    }
                 }
 
                 Row(
