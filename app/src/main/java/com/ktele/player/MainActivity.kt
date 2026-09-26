@@ -51,6 +51,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Alignment
@@ -98,11 +99,14 @@ import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
+import java.net.URL
 import java.net.URLDecoder
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlin.math.ceil
 
 
@@ -224,6 +228,56 @@ private val movieSites = listOf(
     MovieSite("NetMirror", "https://netmirror.center/"),
     MovieSite("Cineby", "https://cineby.my/movies")
 )
+
+data class IptvChannel(
+    val name: String,
+    val category: String,
+    val streamUrl: String
+)
+
+private val iptvCategories = listOf("Malayalam", "Tamil", "Movies", "Songs", "Favorites")
+private val iptvGroupPattern = Regex("""group-title="([^"]*)"""")
+
+private fun normalizeIptvCategory(groupTitle: String, channelName: String): String? {
+    val searchable = (groupTitle + " " + channelName).lowercase()
+    return when {
+        "malayalam" in searchable -> "Malayalam"
+        "tamil" in searchable -> "Tamil"
+        "movie" in searchable || "cinema" in searchable -> "Movies"
+        "song" in searchable || "music" in searchable -> "Songs"
+        else -> null
+    }
+}
+
+private fun parseIptvPlaylist(contents: String): List<IptvChannel> {
+    val channels = mutableListOf<IptvChannel>()
+    var pendingName = ""
+    var pendingGroup = ""
+
+    contents.lineSequence().forEach { rawLine ->
+        val line = rawLine.trim()
+        when {
+            line.startsWith("#EXTINF", ignoreCase = true) -> {
+                pendingName = line.substringAfter(",", "Untitled channel").trim()
+                pendingGroup = iptvGroupPattern.find(line)?.groupValues?.getOrNull(1).orEmpty()
+            }
+            line.isNotEmpty() && !line.startsWith("#") && pendingName.isNotEmpty() -> {
+                val category = normalizeIptvCategory(pendingGroup, pendingName)
+                if (category != null) {
+                    channels += IptvChannel(
+                        name = pendingName,
+                        category = category,
+                        streamUrl = line
+                    )
+                }
+                pendingName = ""
+                pendingGroup = ""
+            }
+        }
+    }
+
+    return channels.distinctBy { it.streamUrl }
+}
 
 data class VideoItem(
 
@@ -1992,49 +2046,76 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun IptvScreen() {
         val context = LocalContext.current
-        val packageName = "com.streamvault.app"
-        val installUrl = "https://github.com/Davidona/StreamVault-IPTV/releases/latest/download/StreamVault.apk"
+        val favoritePreferences = remember(context) {
+            context.getSharedPreferences("iptv_favorites", Context.MODE_PRIVATE)
+        }
         val defaultPlaylistUrl = "https://iptv-org.github.io/iptv/index.m3u"
         var playlistUrl by remember { mutableStateOf(defaultPlaylistUrl) }
-        var copied by remember { mutableStateOf(false) }
-
-        fun installOrOpenStreamVault() {
-            val launchIntent = context.packageManager.getLaunchIntentForPackage(packageName)
-            val intent = launchIntent ?: Intent(
-                Intent.ACTION_VIEW,
-                Uri.parse(installUrl)
+        var channels by remember { mutableStateOf<List<IptvChannel>>(emptyList()) }
+        var selectedCategory by remember { mutableStateOf("Malayalam") }
+        var favoriteUrls by remember(favoritePreferences) {
+            mutableStateOf(
+                favoritePreferences.getStringSet("urls", emptySet())?.toSet().orEmpty()
             )
-            try {
-                context.startActivity(intent)
-            } catch (_: Exception) {
-                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(installUrl)))
-            }
         }
+        var loading by remember { mutableStateOf(false) }
+        var error by remember { mutableStateOf("") }
+        var selectedChannel by remember { mutableStateOf<IptvChannel?>(null) }
+        val scope = rememberCoroutineScope()
 
-        fun openPlaylistInStreamVault() {
-            val uri = Uri.parse(playlistUrl.trim())
-            val ottIntent = Intent(Intent.ACTION_VIEW, uri).apply {
-                setPackage(packageName)
+        fun loadPlaylist() {
+            val sourceUrl = playlistUrl.trim()
+            if (sourceUrl.isEmpty()) {
+                error = "Enter an M3U playlist URL"
+                return
             }
-            val browserIntent = Intent(Intent.ACTION_VIEW, uri)
-            try {
-                if (context.packageManager.getLaunchIntentForPackage(packageName) != null) {
-                    context.startActivity(ottIntent)
-                } else {
-                    context.startActivity(browserIntent)
+            scope.launch {
+                loading = true
+                error = ""
+                try {
+                    val rawPlaylist = withContext(Dispatchers.IO) {
+                        URL(sourceUrl).openStream().bufferedReader().use { it.readText() }
+                    }
+                    channels = parseIptvPlaylist(rawPlaylist)
+                    if (channels.isEmpty()) {
+                        error = "No Malayalam, Tamil, Movies or Songs channels found"
+                    }
+                } catch (exception: Exception) {
+                    error = "Could not load playlist: ${exception.message ?: "check the URL"}"
+                    channels = emptyList()
+                } finally {
+                    loading = false
                 }
-            } catch (_: Exception) {
-                context.startActivity(browserIntent)
             }
         }
 
-        fun copyPlaylistUrl() {
-            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE)
-                as? android.content.ClipboardManager
-            clipboard?.setPrimaryClip(
-                android.content.ClipData.newPlainText("IPTV playlist", playlistUrl)
+        fun toggleFavorite(channel: IptvChannel) {
+            favoriteUrls = if (favoriteUrls.contains(channel.streamUrl)) {
+                favoriteUrls - channel.streamUrl
+            } else {
+                favoriteUrls + channel.streamUrl
+            }
+            favoritePreferences.edit().putStringSet("urls", favoriteUrls).apply()
+        }
+
+        LaunchedEffect(Unit) {
+            loadPlaylist()
+        }
+
+        val visibleChannels = channels.filter { channel ->
+            if (selectedCategory == "Favorites") {
+                favoriteUrls.contains(channel.streamUrl)
+            } else {
+                channel.category == selectedCategory
+            }
+        }
+
+        if (selectedChannel != null) {
+            IptvPlayerScreen(
+                channel = selectedChannel!!,
+                onClose = { selectedChannel = null }
             )
-            copied = true
+            return
         }
 
         BackHandler { iptvOpen = false }
@@ -2055,71 +2136,200 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
             Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(20.dp)) {
-                    Text("IPTV playlist", style = MaterialTheme.typography.titleLarge)
-                    Spacer(modifier = Modifier.height(8.dp))
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("M3U playlist", style = MaterialTheme.typography.titleLarge)
+                    Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        "Use this M3U playlist with StreamVault or another IPTV player.",
+                        "Load Malayalam, Tamil, Movies and Songs channels directly in K-Tele Player.",
                         color = Color(0xFFB9C2D0)
                     )
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
                     OutlinedTextField(
                         value = playlistUrl,
-                        onValueChange = {
-                            playlistUrl = it
-                            copied = false
-                        },
+                        onValueChange = { playlistUrl = it },
                         label = { Text("M3U playlist URL") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Button(
-                            onClick = { openPlaylistInStreamVault() },
+                            onClick = { loadPlaylist() },
+                            enabled = !loading,
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text("Open playlist")
+                            Text(if (loading) "Loading…" else "Load channels")
                         }
                         TextButton(
-                            onClick = { copyPlaylistUrl() },
+                            onClick = {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE)
+                                    as? android.content.ClipboardManager
+                                clipboard?.setPrimaryClip(
+                                    android.content.ClipData.newPlainText("IPTV playlist", playlistUrl)
+                                )
+                            },
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text(if (copied) "Copied" else "Copy link")
+                            Text("Copy link")
                         }
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(20.dp)) {
-                    Text("StreamVault IPTV", style = MaterialTheme.typography.titleLarge)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        "Install or open StreamVault to manage this playlist.",
-                        color = Color(0xFFB9C2D0)
-                    )
-                    Spacer(modifier = Modifier.height(14.dp))
-                    Button(onClick = { installOrOpenStreamVault() }) {
-                        Text("Install / Open StreamVault")
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                items(iptvCategories) { category ->
+                    Button(
+                        onClick = { selectedCategory = category },
+                        enabled = selectedCategory != category,
+                        shape = RoundedCornerShape(18.dp)
+                    ) {
+                        Text(category)
+                    }
+                }
+            }
+
+            if (error.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(error, color = Color(0xFFFF6B84))
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            if (loading) {
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
+            } else if (visibleChannels.isEmpty()) {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(20.dp)) {
+                        Text("No channels in $selectedCategory", style = MaterialTheme.typography.titleMedium)
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            if (selectedCategory == "Favorites") {
+                                "Tap the star beside a channel to keep it here."
+                            } else {
+                                "Load an M3U playlist containing this category."
+                            },
+                            color = Color(0xFFB9C2D0)
+                        )
+                    }
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(visibleChannels, key = { it.streamUrl }) { channel ->
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { selectedChannel = channel }
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(14.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(channel.name, style = MaterialTheme.typography.titleMedium)
+                                    Text(
+                                        channel.category,
+                                        color = Color(0xFF13CFF0),
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+                                TextButton(onClick = { toggleFavorite(channel) }) {
+                                    Text(if (favoriteUrls.contains(channel.streamUrl)) "★" else "☆")
+                                }
+                                Button(onClick = { selectedChannel = channel }) {
+                                    Text("Play")
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
     }
 
-    private fun openMovieSite(url: String) {
-        selectedBrowserUrl = url
-        mediaHubOpen = false
-        browserOpen = true
+    @Composable
+    private fun IptvPlayerScreen(
+        channel: IptvChannel,
+        onClose: () -> Unit
+    ) {
+        val context = LocalContext.current
+        var playerError by remember(channel.streamUrl) { mutableStateOf("") }
+        val player = remember(channel.streamUrl) {
+            ExoPlayer.Builder(context).build().apply {
+                setMediaItem(MediaItem.fromUri(channel.streamUrl))
+                playWhenReady = true
+                addListener(object : Player.Listener {
+                    override fun onPlayerError(error: PlaybackException) {
+                        playerError = "Playback error: ${error.errorCodeName}"
+                    }
+                })
+                prepare()
+            }
+        }
+
+        DisposableEffect(player) {
+            onDispose { player.release() }
+        }
+        BackHandler { onClose() }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFF05060B))
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(onClick = onClose) { Text("Back") }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(channel.name, style = MaterialTheme.typography.titleMedium)
+                    Text(channel.category, color = Color(0xFF13CFF0), style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            AndroidView(
+                factory = { viewContext ->
+                    PlayerView(viewContext).apply {
+                        this.player = player
+                        useController = true
+                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    }
+                },
+                update = { it.player = player },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+            )
+            if (playerError.isNotEmpty()) {
+                Text(
+                    playerError,
+                    color = Color(0xFFFF6B84),
+                    modifier = Modifier.padding(16.dp)
+                )
+            }
+        }
     }
 
     @Composable
@@ -2157,7 +2367,7 @@ class MainActivity : ComponentActivity() {
                     Text("IPTV", style = MaterialTheme.typography.titleLarge)
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        "Use StreamVault for live TV, movies and series with your own playlist.",
+                        "Use the native IPTV player with your own playlist.",
                         color = Color(0xFFB9C2D0)
                     )
                     Spacer(modifier = Modifier.height(14.dp))
