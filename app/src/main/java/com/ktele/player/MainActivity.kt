@@ -1360,8 +1360,6 @@ class MainActivity : ComponentActivity() {
             it.id == subtitleColorId
         } ?: subtitleColorPresets.first()
         val activity = context as? Activity
-        var isLandscape by remember(item.fileId) { mutableStateOf(true) }
-
         var error by remember {
             mutableStateOf("")
         }
@@ -1412,14 +1410,6 @@ class MainActivity : ComponentActivity() {
 
                 activity?.requestedOrientation =
                     ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-            }
-        }
-
-        LaunchedEffect(isLandscape) {
-            activity?.requestedOrientation = if (isLandscape) {
-                ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-            } else {
-                ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             }
         }
 
@@ -1661,10 +1651,6 @@ class MainActivity : ComponentActivity() {
                 horizontalAlignment = Alignment.End,
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Button(onClick = { isLandscape = !isLandscape }) {
-                    Text(if (isLandscape) "Rotate to Portrait" else "Rotate to Landscape")
-                }
-
                 if (!isVideoPlaying) {
                     Button(
                         onClick = {
