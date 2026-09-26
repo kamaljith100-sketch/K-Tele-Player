@@ -500,7 +500,9 @@ class MainActivity : ComponentActivity() {
             val options = TorrentOptions.Builder()
                 .saveLocation(saveDirectory)
                 .removeFilesAfterStop(false)
-                .prepareSize(20L * 1024L * 1024L)
+                .maxConnections(500)
+                .maxActiveDHT(200)
+                .prepareSize(4L * 1024L * 1024L)
                 .build()
 
             torrentStream = TorrentStream.init(options).also { stream ->
@@ -1569,7 +1571,12 @@ class MainActivity : ComponentActivity() {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     CircularProgressIndicator(modifier = Modifier.size(22.dp))
                                     Spacer(modifier = Modifier.size(10.dp))
-                                    Text("Finding peers and preparing video…", color = Color.White)
+                                    Column {
+                                        Text("Finding peers and preparing video…", color = Color.White)
+                                        if (torrentProgress > 0) {
+                                            Text("Buffered: ${torrentProgress}%", color = Color(0xFFB9C2D0))
+                                        }
+                                    }
                                 }
                             }
                         }
