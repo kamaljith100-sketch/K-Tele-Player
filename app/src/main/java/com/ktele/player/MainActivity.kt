@@ -489,69 +489,92 @@ class MainActivity : ComponentActivity() {
 
 
     private fun initTorrentStream() {
+        if (torrentStream != null) return
+
         val saveDirectory = File(filesDir, "torrents")
-        val options = TorrentOptions.Builder()
-            .saveLocation(saveDirectory)
-            .removeFilesAfterStop(false)
-            .prepareSize(20L * 1024L * 1024L)
-            .build()
+        try {
+            if (!saveDirectory.exists() && !saveDirectory.mkdirs()) {
+                throw IOException("Could not create torrent storage directory")
+            }
 
-        torrentStream = TorrentStream.init(options).also { stream ->
-            stream.addListener(object : TorrentListener {
-                override fun onStreamPrepared(torrent: Torrent?) {
-                }
+            val options = TorrentOptions.Builder()
+                .saveLocation(saveDirectory)
+                .removeFilesAfterStop(false)
+                .prepareSize(20L * 1024L * 1024L)
+                .build()
 
-                override fun onStreamStarted(torrent: Torrent?) {
-                    torrentPreparing = true
-                }
-
-                override fun onStreamError(torrent: Torrent?, e: Exception?) {
-                    torrentPreparing = false
-                    torrentError = e?.let { error ->
-                        "Torrent error: ${error.message ?: error.javaClass.simpleName}"
-                    } ?: "Could not start torrent"
-                }
-
-                override fun onStreamReady(torrent: Torrent?) {
-                    val videoFile = torrent?.videoFile
-                    torrentPreparing = false
-
-                    if (videoFile == null || !videoFile.exists()) {
-                        torrentError = "Torrent video file is not available"
-                        return
+            torrentStream = TorrentStream.init(options).also { stream ->
+                stream.addListener(object : TorrentListener {
+                    override fun onStreamPrepared(torrent: Torrent?) {
                     }
 
-                    if (!torrentDownloadMode) {
-                        val bytes = videoFile.length()
-                        playing = VideoItem(
-                            messageId = 0L,
-                            title = torrentSourceTitle.ifBlank { videoFile.name },
-                            info = "Torrent  |  ${bytes / 1048576} MB",
-                            fileId = -1,
-                            size = bytes,
-                            localPath = videoFile.absolutePath,
-                            torrent = torrent
-                        )
-                        torrentSourceUrl = null
-                    } else {
-                        torrentError = "Download started: ${videoFile.name}"
+                    override fun onStreamStarted(torrent: Torrent?) {
+                        torrentPreparing = true
+                        torrentError = ""
                     }
-                }
 
-                override fun onStreamProgress(
-                    torrent: Torrent?,
-                    status: StreamStatus?
-                ) {
-                    torrentProgress = status?.bufferProgress ?: 0
-                }
+                    override fun onStreamError(torrent: Torrent?, e: Exception?) {
+                        torrentPreparing = false
+                        torrentError = e?.let { error ->
+                            "Torrent error: ${error.message ?: error.javaClass.simpleName}"
+                        } ?: "Could not start torrent"
+                    }
 
-                override fun onStreamStopped() {
-                    torrentPreparing = false
-                }
-            })
+                    override fun onStreamReady(torrent: Torrent?) {
+                        try {
+                            torrentPreparing = false
+
+                            val readyTorrent = torrent
+                            if (readyTorrent == null) {
+                                torrentError = "Torrent finished without a playable file"
+                                return
+                            }
+
+                            val videoFile = readyTorrent.videoFile
+                            if (!videoFile.exists() || !videoFile.isFile) {
+                                torrentError = "Torrent video file is not available"
+                                return
+                            }
+
+                            if (!torrentDownloadMode) {
+                                val bytes = videoFile.length()
+                                playing = VideoItem(
+                                    messageId = 0L,
+                                    title = torrentSourceTitle.ifBlank { videoFile.name },
+                                    info = "Torrent  |  ${bytes / 1048576} MB",
+                                    fileId = -1,
+                                    size = bytes,
+                                    localPath = videoFile.absolutePath,
+                                    torrent = readyTorrent
+                                )
+                                torrentSourceUrl = null
+                            } else {
+                                torrentError = "Download started: ${videoFile.name}"
+                            }
+                        } catch (e: Throwable) {
+                            torrentPreparing = false
+                            torrentError = "Could not prepare torrent video: ${e.message ?: e.javaClass.simpleName}"
+                        }
+                    }
+
+                    override fun onStreamProgress(
+                        torrent: Torrent?,
+                        status: StreamStatus?
+                    ) {
+                        torrentProgress = status?.bufferProgress ?: 0
+                    }
+
+                    override fun onStreamStopped() {
+                        torrentPreparing = false
+                    }
+                })
+            }
+        } catch (e: Throwable) {
+            torrentStream = null
+            torrentPreparing = false
+            torrentError = "Could not initialize torrent player: ${e.message ?: e.javaClass.simpleName}"
         }
     }
-
 
     private fun startTelegram() {
         if (BuildConfig.TG_API_ID == 0) {
@@ -967,6 +990,7 @@ class MainActivity : ComponentActivity() {
         torrentError = ""
         torrentProgress = 0
         try {
+            if (torrentStream == null) initTorrentStream()
             val stream = torrentStream ?: throw IllegalStateException("Torrent engine is not initialized")
             stream.startStream(source)
         } catch (e: Throwable) {
@@ -977,8 +1001,13 @@ class MainActivity : ComponentActivity() {
 
 
     private fun stopTorrent() {
-        torrentStream?.stopStream()
-        torrentPreparing = false
+        try {
+            torrentStream?.stopStream()
+        } catch (e: Throwable) {
+            torrentError = "Could not stop torrent: ${e.message ?: e.javaClass.simpleName}"
+        } finally {
+            torrentPreparing = false
+        }
     }
 
 
