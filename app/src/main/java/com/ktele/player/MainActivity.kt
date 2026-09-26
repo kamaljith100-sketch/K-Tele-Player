@@ -20,6 +20,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,8 +33,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -151,6 +154,65 @@ private val kTeleColorScheme = darkColorScheme(
     onError = Color(0xFF2B0007)
 )
 
+
+data class CatalogMovie(
+    val title: String,
+    val category: String,
+    val language: String,
+    val quality: String,
+    val size: String,
+    val license: String,
+    val description: String,
+    val posterColor: Long
+)
+
+private val catalogCategories = listOf(
+    "All", "Malayalam", "Tamil", "Hindi", "Hollywood", "Dubbed", "Others"
+)
+
+// Demo entries are open/licensed films. Replace or extend these with your own licensed catalog.
+private val catalogMovies = listOf(
+    CatalogMovie(
+        title = "Sintel",
+        category = "Others",
+        language = "English",
+        quality = "1080p",
+        size = "1.2 GB",
+        license = "Creative Commons BY 3.0",
+        description = "An open movie from the Blender Foundation, available for legal sharing.",
+        posterColor = 0xFF4A2F68
+    ),
+    CatalogMovie(
+        title = "Tears of Steel",
+        category = "Hollywood",
+        language = "English",
+        quality = "1080p",
+        size = "2.4 GB",
+        license = "Creative Commons BY 3.0",
+        description = "A science-fiction open movie made with free and open-source tools.",
+        posterColor = 0xFF155D72
+    ),
+    CatalogMovie(
+        title = "Big Buck Bunny",
+        category = "Others",
+        language = "English",
+        quality = "1080p",
+        size = "780 MB",
+        license = "Creative Commons BY 3.0",
+        description = "A family-friendly open movie that can be legally shared.",
+        posterColor = 0xFF2E7652
+    ),
+    CatalogMovie(
+        title = "Elephants Dream",
+        category = "Others",
+        language = "English",
+        quality = "720p",
+        size = "640 MB",
+        license = "Creative Commons BY 2.5",
+        description = "The first open movie from the Blender Foundation.",
+        posterColor = 0xFF7A4B31
+    )
+)
 
 data class VideoItem(
 
@@ -535,6 +597,8 @@ class MainActivity : ComponentActivity() {
     private var playing by mutableStateOf<VideoItem?>(null)
 
     private var browserOpen by mutableStateOf(false)
+    private var catalogOpen by mutableStateOf(false)
+    private var selectedCatalogMovie by mutableStateOf<CatalogMovie?>(null)
 
     private var torrentStream: TorrentStream? = null
     private var torrentSourceUrl by mutableStateOf<String?>(null)
@@ -1161,6 +1225,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+            catalogOpen -> CatalogScreen()
             torrentSourceUrl != null -> TorrentSourceDialog()
             else -> ListScreen()
         }
@@ -1711,6 +1776,193 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
+    private fun CatalogScreen() {
+        val selected = selectedCatalogMovie
+        if (selected != null) {
+            CatalogDetailScreen(selected)
+            return
+        }
+
+        var selectedCategory by remember { mutableStateOf("All") }
+        val visibleMovies = if (selectedCategory == "All") {
+            catalogMovies
+        } else {
+            catalogMovies.filter { it.category == selectedCategory }
+        }
+
+        BackHandler { catalogOpen = false }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(20.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column {
+                    Text("Movie Catalog", style = MaterialTheme.typography.headlineSmall)
+                    Text(
+                        "Open and licensed titles",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFFB9C2D0)
+                    )
+                }
+                TextButton(onClick = { catalogOpen = false }) {
+                    Text("Home")
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                items(catalogCategories) { category ->
+                    Button(
+                        onClick = { selectedCategory = category },
+                        enabled = selectedCategory != category,
+                        shape = RoundedCornerShape(18.dp)
+                    ) {
+                        Text(category)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            if (visibleMovies.isEmpty()) {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(20.dp)) {
+                        Text("No licensed titles yet", style = MaterialTheme.typography.titleMedium)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            "Add your own Malayalam, Tamil, Hindi or dubbed titles to the catalog data.",
+                            color = Color(0xFFB9C2D0)
+                        )
+                    }
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    items(visibleMovies.chunked(2)) { rowMovies ->
+                        Row(modifier = Modifier.fillMaxWidth()) {
+                            rowMovies.forEach { movie ->
+                                CatalogPosterCard(
+                                    movie = movie,
+                                    modifier = Modifier.weight(1f),
+                                    onClick = { selectedCatalogMovie = movie }
+                                )
+                            }
+                            if (rowMovies.size == 1) {
+                                Spacer(modifier = Modifier.weight(1f))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @Composable
+    private fun CatalogPosterCard(
+        movie: CatalogMovie,
+        modifier: Modifier = Modifier,
+        onClick: () -> Unit
+    ) {
+        Card(
+            modifier = modifier
+                .padding(6.dp)
+                .clickable(onClick = onClick),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Column {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(190.dp)
+                        .background(Color(movie.posterColor)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            movie.title.take(2).uppercase(),
+                            style = MaterialTheme.typography.displaySmall,
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text("OPEN MOVIE", color = Color.White.copy(alpha = 0.8f))
+                    }
+                }
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text(movie.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(movie.language + " • " + movie.quality, style = MaterialTheme.typography.bodySmall)
+                    Text(movie.size, style = MaterialTheme.typography.bodySmall, color = Color(0xFF13CFF0))
+                }
+            }
+        }
+    }
+
+    @Composable
+    private fun CatalogDetailScreen(movie: CatalogMovie) {
+        BackHandler { selectedCatalogMovie = null }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(20.dp)
+        ) {
+            TextButton(onClick = { selectedCatalogMovie = null }) {
+                Text("Back to catalog")
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(modifier = Modifier.fillMaxWidth()) {
+                Box(
+                    modifier = Modifier
+                        .size(width = 132.dp, height = 190.dp)
+                        .background(Color(movie.posterColor), RoundedCornerShape(16.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        movie.title.take(2).uppercase(),
+                        style = MaterialTheme.typography.headlineLarge,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Spacer(modifier = Modifier.size(16.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(movie.title, style = MaterialTheme.typography.headlineSmall)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(movie.category + " • " + movie.language)
+                    Text(movie.quality + " • " + movie.size, color = Color(0xFF13CFF0))
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Licensed: " + movie.license, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            Spacer(modifier = Modifier.height(20.dp))
+            Text(movie.description, style = MaterialTheme.typography.bodyLarge)
+            Spacer(modifier = Modifier.height(20.dp))
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("Licensed file", style = MaterialTheme.typography.titleMedium)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        "Add your own licensed file or torrent URL to enable playback/download for this title.",
+                        color = Color(0xFFB9C2D0)
+                    )
+                }
+            }
+        }
+    }
+
+    @Composable
     private fun BrowserScreen() {
         val initialUrl = "https://www.google.com"
         var urlText by remember { mutableStateOf(initialUrl) }
@@ -2017,6 +2269,12 @@ class MainActivity : ComponentActivity() {
                         val current = openChatId
 
                         if (current == null) {
+                            Button(onClick = { catalogOpen = true }) {
+                                Text("Movie Catalog")
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
                             Text(
                                 text = "Your chats",
                                 style = MaterialTheme.typography.titleMedium
@@ -2108,6 +2366,12 @@ class MainActivity : ComponentActivity() {
                             "code" -> "Login code from Telegram"
                             else -> "Two-step verification password"
                         }
+
+                        Button(onClick = { catalogOpen = true }) {
+                            Text("Movie Catalog")
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
 
                         Button(
                             onClick = { browserOpen = true }
