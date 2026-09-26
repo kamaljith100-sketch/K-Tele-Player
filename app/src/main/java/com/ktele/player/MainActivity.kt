@@ -106,6 +106,7 @@ import java.util.concurrent.TimeUnit
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.ceil
 
@@ -2329,6 +2330,17 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.padding(16.dp)
                 )
             }
+        }
+    }
+
+    private fun openMovieSite(url: String) {
+        val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+        try {
+            startActivity(browserIntent)
+        } catch (_: Exception) {
+            selectedBrowserUrl = url
+            mediaHubOpen = false
+            browserOpen = true
         }
     }
 
