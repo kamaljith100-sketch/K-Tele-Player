@@ -1227,7 +1227,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-            iptvOpen -> CatalogScreen()
+            iptvOpen -> IptvScreen()
             torrentSourceUrl != null -> TorrentSourceDialog()
             else -> ListScreen()
         }
@@ -2136,10 +2136,10 @@ class MainActivity : ComponentActivity() {
 
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(20.dp)) {
-                    Text("Movie Catalog", style = MaterialTheme.typography.titleLarge)
+                    Text("IPTV", style = MaterialTheme.typography.titleLarge)
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        "Browse movies by language, poster, quality and size.",
+                        "Use StreamVault for live TV, movies and series with your own playlist.",
                         color = Color(0xFFB9C2D0)
                     )
                     Spacer(modifier = Modifier.height(14.dp))
@@ -2149,7 +2149,7 @@ class MainActivity : ComponentActivity() {
                             iptvOpen = true
                         }
                     ) {
-                        Text("Open Movie Catalog")
+                        Text("Open IPTV")
                     }
                 }
             }
