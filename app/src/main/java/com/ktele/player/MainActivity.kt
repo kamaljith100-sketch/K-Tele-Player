@@ -1382,6 +1382,16 @@ class MainActivity : ComponentActivity() {
                             else -> "Two-step verification password"
                         }
 
+                        Button(
+                            onClick = { browserOpen = true }
+                        ) {
+                            Text("Open Browser")
+                        }
+
+                        Spacer(
+                            modifier = Modifier.height(16.dp)
+                        )
+
                         OutlinedTextField(
                             value = input,
                             onValueChange = { input = it },
