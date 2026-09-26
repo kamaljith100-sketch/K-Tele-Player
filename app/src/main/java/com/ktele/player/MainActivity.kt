@@ -597,7 +597,7 @@ class MainActivity : ComponentActivity() {
     private var playing by mutableStateOf<VideoItem?>(null)
 
     private var browserOpen by mutableStateOf(false)
-    private var catalogOpen by mutableStateOf(false)
+    private var iptvOpen by mutableStateOf(false)
     private var mediaHubOpen by mutableStateOf(false)
     private var selectedCatalogMovie by mutableStateOf<CatalogMovie?>(null)
 
@@ -1227,7 +1227,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-            catalogOpen -> CatalogScreen()
+            iptvOpen -> CatalogScreen()
             torrentSourceUrl != null -> TorrentSourceDialog()
             else -> ListScreen()
         }
@@ -1805,7 +1805,7 @@ class MainActivity : ComponentActivity() {
             catalogMovies.filter { it.category == selectedCategory }
         }
 
-        BackHandler { catalogOpen = false }
+        BackHandler { iptvOpen = false }
 
         Column(
             modifier = Modifier
@@ -1825,7 +1825,7 @@ class MainActivity : ComponentActivity() {
                         color = Color(0xFFB9C2D0)
                     )
                 }
-                TextButton(onClick = { catalogOpen = false }) {
+                TextButton(onClick = { iptvOpen = false }) {
                     Text("Home")
                 }
             }
@@ -1978,6 +1978,62 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
+    private fun IptvScreen() {
+        val context = LocalContext.current
+        val packageName = "com.ottnavigator.iptvnavigator"
+        val playStoreUrl = "https://play.google.com/store/apps/details?id=$packageName"
+
+        fun installOrOpenOttNavigator() {
+            val launchIntent = context.packageManager.getLaunchIntentForPackage(packageName)
+            val intent = launchIntent ?: Intent(
+                Intent.ACTION_VIEW,
+                Uri.parse("market://details?id=$packageName")
+            )
+            try {
+                context.startActivity(intent)
+            } catch (_: Exception) {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(playStoreUrl)))
+            }
+        }
+
+        BackHandler { iptvOpen = false }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("IPTV", style = MaterialTheme.typography.headlineMedium)
+                TextButton(onClick = { iptvOpen = false }) {
+                    Text("Home")
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Text("OTT Navigator IPTV", style = MaterialTheme.typography.titleLarge)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "Install or open OTT Navigator to add your own M3U playlist or Xtream Codes account.",
+                        color = Color(0xFFB9C2D0)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(onClick = { installOrOpenOttNavigator() }) {
+                        Text("Install / Open OTT Navigator")
+                    }
+                }
+            }
+        }
+    }
+
+    @Composable
     private fun MediaHubScreen() {
         BackHandler { mediaHubOpen = false }
 
@@ -2019,7 +2075,7 @@ class MainActivity : ComponentActivity() {
                     Button(
                         onClick = {
                             mediaHubOpen = false
-                            catalogOpen = true
+                            iptvOpen = true
                         }
                     ) {
                         Text("Open Movie Catalog")
