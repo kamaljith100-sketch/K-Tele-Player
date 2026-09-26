@@ -2106,7 +2106,13 @@ class MainActivity : ComponentActivity() {
                 return
             }
 
-            if (handleSpecialUrl(trimmed, view)) return
+            if (
+                trimmed.contains("://") ||
+                trimmed.startsWith("mailto:", ignoreCase = true) ||
+                trimmed.startsWith("tel:", ignoreCase = true)
+            ) {
+                if (handleSpecialUrl(trimmed, view)) return
+            }
 
             val encodedQuery = Uri.encode(trimmed)
             val target = if (
@@ -2240,22 +2246,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                 }
                             }
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Button(
-                                onClick = {
-                                    val value = searchQuery.trim()
-                                    if (value.isNotEmpty() && !bookmarks.contains(value)) {
-                                        val updated = bookmarks + value
-                                        bookmarks = updated
-                                        bookmarkPreferences.edit()
-                                            .putStringSet("urls", updated.toSet())
-                                            .apply()
-                                    }
-                                },
-                                shape = RoundedCornerShape(18.dp)
-                            ) {
-                                Text("+ Add Bookmark")
-                            }
+
                         }
                     }
                 }
