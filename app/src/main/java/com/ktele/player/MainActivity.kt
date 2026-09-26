@@ -2738,6 +2738,44 @@ class MainActivity : ComponentActivity() {
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Text("Music", style = MaterialTheme.typography.titleLarge)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        "Listen to music online.",
+                        color = Color(0xFFB9C2D0)
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Button(onClick = { openMovieSite("https://listenfree.in/") }) {
+                        Text("Open Music")
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Text("Radio", style = MaterialTheme.typography.titleLarge)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        "Listen to Malayalam radio stations.",
+                        color = Color(0xFFB9C2D0)
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Button(onClick = {
+                        openMovieSite("https://radiosindia.com/malayalamradio.html")
+                    }) {
+                        Text("Open Radio")
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(20.dp)) {
                     Text("Telegram Videos", style = MaterialTheme.typography.titleLarge)
