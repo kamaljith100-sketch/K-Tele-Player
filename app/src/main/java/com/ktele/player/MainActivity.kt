@@ -147,8 +147,8 @@ private const val VIDEO_START_BUFFER_MS = 1_000
 private const val VIDEO_REBUFFER_BUFFER_MS = 2_000
 
 // Fetch only small on-demand ranges; playback reads each range incrementally.
-private const val TELEGRAM_STREAM_CHUNK_BYTES = 1024L * 1024L
-private const val TELEGRAM_STREAM_READ_BYTES = 256L * 1024L
+private const val TELEGRAM_STREAM_CHUNK_BYTES = 4L * 1024L * 1024L
+private const val TELEGRAM_STREAM_READ_BYTES = 1024L * 1024L
 
 
 class TdFileDataSource(
