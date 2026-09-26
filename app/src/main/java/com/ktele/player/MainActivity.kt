@@ -667,6 +667,7 @@ class MainActivity : ComponentActivity() {
     private var iptvOpen by mutableStateOf(false)
     private var settingsOpen by mutableStateOf(false)
     private var homeOpen by mutableStateOf(true)
+    private var menuOpen by mutableStateOf(false)
     private var mediaHubOpen by mutableStateOf(false)
     private var telegramLoginOpen by mutableStateOf(false)
     private var iptvPlaylistUrl by mutableStateOf(DEFAULT_IPTV_PLAYLIST_URL)
@@ -1293,6 +1294,7 @@ class MainActivity : ComponentActivity() {
         when {
             currentVideo != null -> PlayerScreen(currentVideo)
             homeOpen -> HomeScreen()
+            menuOpen -> MainMenuScreen()
             mediaHubOpen -> MediaHubScreen()
             telegramLoginOpen -> TelegramLoginScreen()
             browserOpen -> {
@@ -2452,20 +2454,20 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun HomeScreen() {
-        val openMedia: () -> Unit = {
+        val openMenu: () -> Unit = {
             homeOpen = false
-            mediaHubOpen = true
+            menuOpen = true
         }
 
         LaunchedEffect(Unit) {
             delay(1400)
-            openMedia()
+            openMenu()
         }
 
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .clickable { openMedia() },
+                .clickable { openMenu() },
             contentAlignment = Alignment.Center
         ) {
             Image(
@@ -2478,12 +2480,56 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
+    private fun MainMenuScreen() {
+        BackHandler {
+            menuOpen = false
+            homeOpen = true
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.Start
+        ) {
+            Button(
+                onClick = {
+                    menuOpen = false
+                    mediaHubOpen = true
+                }
+            ) {
+                Text("Media")
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Button(
+                onClick = {
+                    menuOpen = false
+                    telegramLoginOpen = true
+                }
+            ) {
+                Text("Telegram Login")
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Text(
+                text = "ടെലിഗ്രാം വീഡിയോസ് കാണുന്നതിനായി ലോഗിൻ ചെയ്യുക",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color(0xFFB9C2D0)
+            )
+        }
+    }
+
+    @Composable
     private fun TelegramLoginScreen() {
         var input by remember { mutableStateOf("") }
 
         BackHandler {
             telegramLoginOpen = false
-            mediaHubOpen = true
+            menuOpen = true
         }
 
         LaunchedEffect(stage) {
@@ -2566,7 +2612,10 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun MediaHubScreen() {
-        BackHandler { mediaHubOpen = false }
+        BackHandler {
+            mediaHubOpen = false
+            menuOpen = true
+        }
 
         Column(
             modifier = Modifier
@@ -2593,9 +2642,9 @@ class MainActivity : ComponentActivity() {
                     }
                     TextButton(onClick = {
                         mediaHubOpen = false
-                        homeOpen = true
+                        menuOpen = true
                     }) {
-                        Text("Home")
+                        Text("Back")
                     }
                 }
             }
