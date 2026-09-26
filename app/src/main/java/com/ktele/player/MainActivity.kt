@@ -2040,6 +2040,10 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun BrowserScreen() {
+        val browserContext = LocalContext.current
+        val bookmarkPreferences = remember(browserContext) {
+            browserContext.getSharedPreferences("browser_bookmarks", Context.MODE_PRIVATE)
+        }
         val initialUrl = "https://www.google.com"
         var urlText by remember { mutableStateOf(initialUrl) }
         var searchQuery by remember { mutableStateOf("") }
@@ -2047,7 +2051,11 @@ class MainActivity : ComponentActivity() {
         var browserHome by remember { mutableStateOf(true) }
         var browserView by remember { mutableStateOf<WebView?>(null) }
         var selectedProvider by remember { mutableStateOf("All legal providers") }
-        var bookmarks by remember { mutableStateOf(listOf<String>()) }
+        var bookmarks by remember(bookmarkPreferences) {
+            mutableStateOf(
+                bookmarkPreferences.getStringSet("urls", emptySet())?.toList().orEmpty()
+            )
+        }
         val providerOptions = listOf(
             "All legal providers",
             "Internet Archive",
@@ -2285,7 +2293,11 @@ class MainActivity : ComponentActivity() {
                                 onClick = {
                                     val value = searchQuery.trim()
                                     if (value.isNotEmpty() && !bookmarks.contains(value)) {
-                                        bookmarks = bookmarks + value
+                                        val updated = bookmarks + value
+                                        bookmarks = updated
+                                        bookmarkPreferences.edit()
+                                            .putStringSet("urls", updated.toSet())
+                                            .apply()
                                     }
                                 },
                                 shape = RoundedCornerShape(18.dp)
