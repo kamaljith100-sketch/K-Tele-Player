@@ -1133,8 +1133,8 @@ class MainActivity : ComponentActivity() {
     }
 
 
-    private fun showTorrentSource(rawUrl: String) {
-        val value = normalizeTorrentSource(rawUrl) ?: return
+    private fun showTorrentSource(rawUrl: String, assumeTorrent: Boolean = false) {
+        val value = if (assumeTorrent) rawUrl.trim() else normalizeTorrentSource(rawUrl) ?: return
         torrentSourceUrl = value
         torrentSourceTitle = torrentTitle(value)
         torrentSourceSize = if (value.startsWith("magnet:", ignoreCase = true)) {
@@ -2319,8 +2319,11 @@ class MainActivity : ComponentActivity() {
                                 runOnUiThread { showTorrentSource(url) }
                             }
                         }, "KTeleTorrent")
-                        setDownloadListener { url, _, _, _, _ ->
-                            showTorrentSource(url)
+                        setDownloadListener { url, _, contentDisposition, mimeType, _ ->
+                            val isTorrentDownload =
+                                mimeType.equals("application/x-bittorrent", ignoreCase = true) ||
+                                    contentDisposition?.contains(".torrent", ignoreCase = true) == true
+                            showTorrentSource(url, assumeTorrent = isTorrentDownload)
                         }
                         webViewClient = object : WebViewClient() {
                             override fun shouldOverrideUrlLoading(
