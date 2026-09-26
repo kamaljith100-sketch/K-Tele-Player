@@ -1982,6 +1982,9 @@ class MainActivity : ComponentActivity() {
         val context = LocalContext.current
         val packageName = "com.ottnavigator.iptvnavigator"
         val playStoreUrl = "https://play.google.com/store/apps/details?id=$packageName"
+        val defaultPlaylistUrl = "https://iptv-org.github.io/iptv/index.m3u"
+        var playlistUrl by remember { mutableStateOf(defaultPlaylistUrl) }
+        var copied by remember { mutableStateOf(false) }
 
         fun installOrOpenOttNavigator() {
             val launchIntent = context.packageManager.getLaunchIntentForPackage(packageName)
@@ -1994,6 +1997,32 @@ class MainActivity : ComponentActivity() {
             } catch (_: Exception) {
                 context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(playStoreUrl)))
             }
+        }
+
+        fun openPlaylistInOttNavigator() {
+            val uri = Uri.parse(playlistUrl.trim())
+            val ottIntent = Intent(Intent.ACTION_VIEW, uri).apply {
+                setPackage(packageName)
+            }
+            val browserIntent = Intent(Intent.ACTION_VIEW, uri)
+            try {
+                if (context.packageManager.getLaunchIntentForPackage(packageName) != null) {
+                    context.startActivity(ottIntent)
+                } else {
+                    context.startActivity(browserIntent)
+                }
+            } catch (_: Exception) {
+                context.startActivity(browserIntent)
+            }
+        }
+
+        fun copyPlaylistUrl() {
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE)
+                as? android.content.ClipboardManager
+            clipboard?.setPrimaryClip(
+                android.content.ClipData.newPlainText("IPTV playlist", playlistUrl)
+            )
+            copied = true
         }
 
         BackHandler { iptvOpen = false }
@@ -2018,13 +2047,55 @@ class MainActivity : ComponentActivity() {
 
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(20.dp)) {
+                    Text("IPTV playlist", style = MaterialTheme.typography.titleLarge)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "Use this M3U playlist with OTT Navigator or another IPTV player.",
+                        color = Color(0xFFB9C2D0)
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+                    OutlinedTextField(
+                        value = playlistUrl,
+                        onValueChange = {
+                            playlistUrl = it
+                            copied = false
+                        },
+                        label = { Text("M3U playlist URL") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = { openPlaylistInOttNavigator() },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Open playlist")
+                        }
+                        TextButton(
+                            onClick = { copyPlaylistUrl() },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(if (copied) "Copied" else "Copy link")
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(20.dp)) {
                     Text("OTT Navigator IPTV", style = MaterialTheme.typography.titleLarge)
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "Install or open OTT Navigator to add your own M3U playlist or Xtream Codes account.",
+                        "Install or open OTT Navigator to manage this playlist.",
                         color = Color(0xFFB9C2D0)
                     )
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
                     Button(onClick = { installOrOpenOttNavigator() }) {
                         Text("Install / Open OTT Navigator")
                     }
