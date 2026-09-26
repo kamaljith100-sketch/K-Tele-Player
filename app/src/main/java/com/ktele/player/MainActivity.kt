@@ -943,17 +943,33 @@ class MainActivity : ComponentActivity() {
     }
 
 
+    private fun magnetQueryParameter(rawUrl: String, name: String): String? {
+        val query = rawUrl.substringAfter("?", "").substringBefore("#")
+        return query.split("&").asSequence()
+            .mapNotNull { part ->
+                val separator = part.indexOf('=')
+                if (separator <= 0) return@mapNotNull null
+                val key = try {
+                    URLDecoder.decode(part.substring(0, separator), "UTF-8")
+                } catch (_: Exception) {
+                    part.substring(0, separator)
+                }
+                if (key != name) return@mapNotNull null
+                try {
+                    URLDecoder.decode(part.substring(separator + 1), "UTF-8")
+                } catch (_: Exception) {
+                    part.substring(separator + 1)
+                }
+            }
+            .firstOrNull()
+    }
+
+
     private fun torrentTitle(rawUrl: String): String {
         val value = Uri.decode(rawUrl.trim())
         if (value.startsWith("magnet:", ignoreCase = true)) {
-            val displayName = Uri.parse(value).getQueryParameter("dn")
-            if (!displayName.isNullOrBlank()) {
-                return try {
-                    URLDecoder.decode(displayName, "UTF-8")
-                } catch (_: Exception) {
-                    displayName
-                }
-            }
+            val displayName = magnetQueryParameter(value, "dn")
+            if (!displayName.isNullOrBlank()) return displayName
             return "Magnet torrent"
         }
 
@@ -969,7 +985,7 @@ class MainActivity : ComponentActivity() {
         torrentSourceUrl = value
         torrentSourceTitle = torrentTitle(value)
         torrentSourceSize = if (value.startsWith("magnet:", ignoreCase = true)) {
-            val bytes = Uri.parse(value).getQueryParameter("xl")?.toLongOrNull()
+            val bytes = magnetQueryParameter(value, "xl")?.toLongOrNull()
             if (bytes != null) {
                 String.format(java.util.Locale.US, "%.2f GB", bytes / 1073741824.0)
             } else {
