@@ -38,6 +38,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -657,6 +658,46 @@ private fun AppLogo(
         contentScale = ContentScale.Fit,
         modifier = modifier
     )
+}
+
+@Composable
+private fun MediaPlayButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Button(
+        onClick = onClick,
+        modifier = modifier
+            .fillMaxWidth()
+            .height(68.dp),
+        shape = RoundedCornerShape(34.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = Color(0xFF13CFF0),
+            contentColor = Color(0xFF001117)
+        ),
+        elevation = ButtonDefaults.buttonElevation(
+            defaultElevation = 10.dp,
+            pressedElevation = 3.dp
+        )
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                text = "▶",
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.size(10.dp))
+            Text(
+                text = "Media",
+                fontSize = 21.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
 }
 
 class MainActivity : ComponentActivity() {
@@ -2536,14 +2577,12 @@ class MainActivity : ComponentActivity() {
             AppLogo(Modifier.align(Alignment.CenterHorizontally))
             Spacer(modifier = Modifier.height(20.dp))
 
-            Button(
+            MediaPlayButton(
                 onClick = {
                     menuOpen = false
                     mediaHubOpen = true
                 }
-            ) {
-                Text("Media")
-            }
+            )
 
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -3274,9 +3313,9 @@ class MainActivity : ComponentActivity() {
                         val current = openChatId
 
                         if (current == null) {
-                            Button(onClick = { mediaHubOpen = true }) {
-                                Text("Media")
-                            }
+                            MediaPlayButton(
+                                onClick = { mediaHubOpen = true }
+                            )
 
                             Spacer(modifier = Modifier.height(12.dp))
 
@@ -3367,9 +3406,9 @@ class MainActivity : ComponentActivity() {
                             else -> "Two-step verification password"
                         }
 
-                        Button(onClick = { mediaHubOpen = true }) {
-                            Text("Media")
-                        }
+                        MediaPlayButton(
+                            onClick = { mediaHubOpen = true }
+                        )
 
                         Spacer(
                             modifier = Modifier.height(16.dp)
