@@ -165,6 +165,7 @@ private const val VIDEO_MIN_BUFFER_MS = 50_000
 private const val VIDEO_MAX_BUFFER_MS = 50_000
 private const val VIDEO_START_BUFFER_MS = 1_000
 private const val VIDEO_REBUFFER_BUFFER_MS = 2_000
+private const val FALLBACK_START_COUNTDOWN_SECONDS = 5L
 
 // Use a small first range for quick startup, then larger ranges for throughput.
 private const val TELEGRAM_STREAM_INITIAL_CHUNK_BYTES = 512L * 1024L
@@ -1259,6 +1260,8 @@ class MainActivity : ComponentActivity() {
             var hasBufferRate = false
             var lastBufferProgressTimeMs = previousSampleTimeMs
             var hasStartedPlayback = false
+            var bufferingStartedAtMs = previousSampleTimeMs
+            var wasBuffering = false
 
             while (true) {
                 val nowMs = SystemClock.elapsedRealtime()
@@ -1270,6 +1273,10 @@ class MainActivity : ComponentActivity() {
                     currentBufferedDurationMs - previousBufferedDurationMs
 
                 if (currentState == Player.STATE_BUFFERING) {
+                    if (!wasBuffering) {
+                        bufferingStartedAtMs = nowMs
+                        wasBuffering = true
+                    }
                     if (bufferedDeltaMs < 0L) {
                         bufferedMsPerWallMs = 0.0
                         hasBufferRate = false
@@ -1292,6 +1299,7 @@ class MainActivity : ComponentActivity() {
                 } else {
                     hasBufferRate = false
                     lastBufferProgressTimeMs = nowMs
+                    wasBuffering = false
                 }
 
                 if (currentState == Player.STATE_READY && player.playWhenReady) {
@@ -1326,7 +1334,11 @@ class MainActivity : ComponentActivity() {
                                         1_000.0
                                 ).toLong().coerceAtLeast(1L)
                             }
-                            else -> null
+                            else -> {
+                                (FALLBACK_START_COUNTDOWN_SECONDS -
+                                    ((nowMs - bufferingStartedAtMs) / 1_000L))
+                                    .coerceAtLeast(0L)
+                            }
                         }
                     }
 
