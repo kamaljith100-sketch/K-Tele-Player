@@ -1327,7 +1327,7 @@ class MainActivity : ComponentActivity() {
                                 .coerceAtLeast(0L)
 
                         when {
-                            remainingBufferMs == 0L -> 0L
+                            remainingBufferMs == 0L -> 1L
                             hasBufferRate && bufferedMsPerWallMs > 0.0 -> {
                                 ceil(
                                     remainingBufferMs.toDouble() /
@@ -1338,7 +1338,7 @@ class MainActivity : ComponentActivity() {
                             else -> {
                                 (FALLBACK_START_COUNTDOWN_SECONDS -
                                     ((nowMs - bufferingStartedAtMs) / 1_000L))
-                                    .coerceAtLeast(0L)
+                                    .coerceAtLeast(1L)
                             }
                         }
                     }
