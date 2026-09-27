@@ -308,11 +308,16 @@ private fun resolveMusicTrack(song: KUniverseSong): ResolvedMusicTrack? {
     val track = detailJson.optJSONArray("data")?.optJSONObject(0) ?: return null
     val downloads = track.optJSONArray("downloadUrl") ?: return null
     var streamUrl = ""
+    var bestBitrate = -1
     for (index in 0 until downloads.length()) {
         val download = downloads.optJSONObject(index) ?: continue
         val url = download.optString("url")
-        if (url.isNotBlank()) streamUrl = url
-        if (download.optString("quality") == "160kbps" && url.isNotBlank()) break
+        if (url.isBlank()) continue
+        val bitrate = Regex("(\\d+)").find(download.optString("quality"))?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 0
+        if (bitrate >= bestBitrate) {
+            bestBitrate = bitrate
+            streamUrl = url
+        }
     }
     if (streamUrl.isBlank()) return null
     val images = track.optJSONArray("image")
@@ -1379,6 +1384,35 @@ private const val MUSIC_BRANDING_HOOK = """
         return String(value || '').replace(brandPattern, 'K-Universe');
     }
 
+    function enforceHighAudioQuality() {
+        try {
+            if (localStorage.getItem('audioQuality') !== '320kbps') {
+                localStorage.setItem('audioQuality', '320kbps');
+                if (sessionStorage.getItem('__kteleHighQualityReloaded') !== '1') {
+                    sessionStorage.setItem('__kteleHighQualityReloaded', '1');
+                    location.reload();
+                    return false;
+                }
+            }
+        } catch (_) {}
+        return true;
+    }
+
+    document.addEventListener('click', function(event) {
+        var target = event.target && event.target.closest && event.target.closest('button,[role="menuitem"],[role="option"]');
+        if (!target) return;
+        var label = (target.innerText || target.textContent || '').trim();
+        if (!/quality|kbps|smart stream|studio max|reference|standard|basic|auto/i.test(label)) return;
+        setTimeout(function() {
+            try {
+                if (localStorage.getItem('audioQuality') !== '320kbps') {
+                    localStorage.setItem('audioQuality', '320kbps');
+                    location.reload();
+                }
+            } catch (_) {}
+        }, 120);
+    }, true);
+
     function showMalayalamSongs() {
         var existing = document.getElementById('__kteleMalayalamPanel');
         if (existing) {
@@ -1702,6 +1736,7 @@ private const val MUSIC_BRANDING_HOOK = """
     var cleanupQueued = false;
     function runMusicCleanup() {
         if (!document.documentElement) return;
+        if (!enforceHighAudioQuality()) return;
         replaceBranding(document.documentElement);
         configureLanguageSuggestions(document.documentElement);
         trimSystemPreferences(document.documentElement);
