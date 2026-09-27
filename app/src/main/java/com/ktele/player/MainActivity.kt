@@ -1205,7 +1205,9 @@ private const val MUSIC_BRANDING_HOOK = """
         });
         root.querySelectorAll('dialog, [role="dialog"], [aria-modal="true"]').forEach(function(node) {
             var dialogText = (node.innerText || node.textContent || '').trim();
-            if (/home\s+screen\s+suggestions|select\s+the\s+languages|let's\s+go/i.test(dialogText)) node.remove();
+            if (/home\s+screen\s+suggestions|select\s+the\s+languages|let's\s+go/i.test(dialogText)) {
+                node.style.setProperty('display', 'none', 'important');
+            }
         });
         root.querySelectorAll('h1,h2,h3,h4,h5,p,span,a,button,li').forEach(function(node) {
             var text = (node.innerText || node.textContent || '').trim().replace(/\s+/g, ' ');
@@ -1236,7 +1238,11 @@ private const val MUSIC_BRANDING_HOOK = """
                 (style.webkitBackdropFilter && style.webkitBackdropFilter !== 'none') ||
                 (style.filter && style.filter.indexOf('blur') >= 0);
             var hasForm = !!node.querySelector('input, textarea, select, audio, video');
-            if ((position === 'fixed' || position === 'absolute') && zIndex >= 20 && blur && !hasForm) node.remove();
+            if ((position === 'fixed' || position === 'absolute') && zIndex >= 20 && blur && !hasForm) {
+                // Keep React-managed nodes mounted; hiding the backdrop avoids
+                // breaking the site's search modal when it re-renders.
+                node.style.setProperty('display', 'none', 'important');
+            }
         });
 
         // Some pages apply blur to the content container itself instead of using
