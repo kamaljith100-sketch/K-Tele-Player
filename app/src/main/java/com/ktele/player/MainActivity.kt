@@ -8,6 +8,8 @@ import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.os.Bundle
 import android.os.SystemClock
+import android.view.View
+import android.view.WindowManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -2498,13 +2500,19 @@ class MainActivity : ComponentActivity() {
         val context = LocalContext.current
         val activity = context as? Activity
         var playerError by remember(channel.streamUrl) { mutableStateOf("") }
+        var isPlaying by remember(channel.streamUrl) { mutableStateOf(false) }
+        var fillVideo by remember(channel.streamUrl) { mutableStateOf(true) }
         val player = remember(channel.streamUrl) {
             ExoPlayer.Builder(context).build().apply {
                 setMediaItem(MediaItem.fromUri(channel.streamUrl))
                 playWhenReady = true
                 addListener(object : Player.Listener {
+                    override fun onIsPlayingChanged(playing: Boolean) {
+                        isPlaying = playing
+                    }
+
                     override fun onPlayerError(error: PlaybackException) {
-                        playerError = "Playback error: ${error.errorCodeName}"
+                        playerError = "Playback error: " + error.errorCodeName
                     }
                 })
                 prepare()
@@ -2516,18 +2524,41 @@ class MainActivity : ComponentActivity() {
         }
 
         DisposableEffect(Unit) {
+            val window = activity?.window
             val actionBar = activity?.actionBar
             val restoreActionBar = actionBar?.isShowing == true
+            val controller = window?.let { currentWindow ->
+                WindowCompat.getInsetsController(
+                    currentWindow,
+                    currentWindow.decorView
+                )
+            }
+
             actionBar?.hide()
             activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-            val controller = activity?.window?.let { window ->
-                WindowCompat.getInsetsController(window, window.decorView)
+            window?.let { currentWindow ->
+                WindowCompat.setDecorFitsSystemWindows(currentWindow, false)
+                currentWindow.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+                @Suppress("DEPRECATION")
+                currentWindow.decorView.systemUiVisibility =
+                    View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+                        View.SYSTEM_UI_FLAG_FULLSCREEN or
+                        View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                        View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                        View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                        View.SYSTEM_UI_FLAG_LAYOUT_STABLE
             }
             controller?.hide(WindowInsetsCompat.Type.systemBars())
             controller?.systemBarsBehavior =
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
 
             onDispose {
+                window?.let { currentWindow ->
+                    currentWindow.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+                    @Suppress("DEPRECATION")
+                    currentWindow.decorView.systemUiVisibility = 0
+                    WindowCompat.setDecorFitsSystemWindows(currentWindow, true)
+                }
                 controller?.show(WindowInsetsCompat.Type.systemBars())
                 if (restoreActionBar) actionBar?.show()
                 activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
@@ -2541,24 +2572,44 @@ class MainActivity : ComponentActivity() {
                 .fillMaxSize()
                 .background(Color.Black)
         ) {
-            AppLogo(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(16.dp)
-                    .size(72.dp)
-            )
-
             AndroidView(
                 factory = { viewContext ->
                     PlayerView(viewContext).apply {
                         this.player = player
                         useController = true
-                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        controllerAutoShow = true
+                        controllerHideOnTouch = true
+                        resizeMode = if (fillVideo) {
+                            AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                        } else {
+                            AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        }
                     }
                 },
-                update = { it.player = player },
+                update = { playerView ->
+                    playerView.player = player
+                    playerView.resizeMode = if (fillVideo) {
+                        AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                    } else {
+                        AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    }
+                },
                 modifier = Modifier.fillMaxSize()
             )
+
+            // Keep this out of the way during playback. Pause the channel to
+            // switch between a cropped full-screen picture and the full frame.
+            if (!isPlaying) {
+                Button(
+                    onClick = { fillVideo = !fillVideo },
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(18.dp)
+                ) {
+                    Text(if (fillVideo) "Fit" else "Fill")
+                }
+            }
+
             if (playerError.isNotEmpty()) {
                 Text(
                     playerError,
