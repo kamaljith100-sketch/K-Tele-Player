@@ -3,6 +3,8 @@ package com.ktele.player
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.graphics.Color as AndroidColor
 import android.content.pm.ActivityInfo
 import android.net.Uri
@@ -23,7 +25,9 @@ import androidx.activity.compose.setContent
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -61,6 +65,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
@@ -792,6 +799,14 @@ private fun MediaPlayButton(
     }
 }
 
+
+private fun isTelevisionDevice(context: Context): Boolean {
+    val uiModeType = context.resources.configuration.uiMode and
+        Configuration.UI_MODE_TYPE_MASK
+    return uiModeType == Configuration.UI_MODE_TYPE_TELEVISION ||
+        context.packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
+}
+
 class MainActivity : ComponentActivity() {
 
     private var client: Client? = null
@@ -852,8 +867,10 @@ class MainActivity : ComponentActivity() {
         startTelegram()
         initTorrentStream()
 
+        WindowCompat.setDecorFitsSystemWindows(window, true)
         window.statusBarColor = android.graphics.Color.rgb(5, 6, 11)
         window.navigationBarColor = android.graphics.Color.rgb(5, 6, 11)
+        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         WindowCompat.getInsetsController(window, window.decorView).apply {
             isAppearanceLightStatusBars = false
             isAppearanceLightNavigationBars = false
@@ -1497,6 +1514,7 @@ class MainActivity : ComponentActivity() {
             it.id == subtitleColorId
         } ?: subtitleColorPresets.first()
         val activity = context as? Activity
+        val isTv = isTelevisionDevice(context)
         var error by remember {
             mutableStateOf("")
         }
@@ -1545,8 +1563,11 @@ class MainActivity : ComponentActivity() {
                     actionBar?.show()
                 }
 
-                activity?.requestedOrientation =
+                activity?.requestedOrientation = if (isTv) {
+                    ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                } else {
                     ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                }
             }
         }
 
@@ -2153,7 +2174,8 @@ class MainActivity : ComponentActivity() {
         Card(
             modifier = modifier
                 .padding(6.dp)
-                .clickable(onClick = onClick),
+                .clickable(onClick = onClick)
+                .focusable(),
             shape = RoundedCornerShape(16.dp)
         ) {
             Column {
@@ -2443,9 +2465,18 @@ class MainActivity : ComponentActivity() {
         onToggleFavorite: () -> Unit,
         onPlay: () -> Unit
     ) {
+        var isFocused by remember { mutableStateOf(false) }
+
         Card(
             modifier = Modifier
                 .fillMaxWidth()
+                .onFocusChanged { isFocused = it.isFocused }
+                .focusable()
+                .border(
+                    width = if (isFocused) 2.dp else 0.dp,
+                    color = if (isFocused) Color(0xFF13CFF0) else Color.Transparent,
+                    shape = RoundedCornerShape(12.dp)
+                )
                 .clickable(onClick = onPlay)
         ) {
             Row(
@@ -2565,6 +2596,7 @@ class MainActivity : ComponentActivity() {
     ) {
         val context = LocalContext.current
         val activity = context as? Activity
+        val isTv = isTelevisionDevice(context)
         var playerError by remember(channel.streamUrl) { mutableStateOf("") }
         var controlsVisible by remember(channel.streamUrl) { mutableStateOf(true) }
         var fillVideo by remember(channel.streamUrl) { mutableStateOf(true) }
@@ -2645,7 +2677,11 @@ class MainActivity : ComponentActivity() {
                 }
                 controller?.show(WindowInsetsCompat.Type.systemBars())
                 if (restoreActionBar) actionBar?.show()
-                activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                activity?.requestedOrientation = if (isTv) {
+                    ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                } else {
+                    ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                }
             }
         }
 
@@ -2750,7 +2786,8 @@ class MainActivity : ComponentActivity() {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .clickable { openMenu() },
+                .clickable { openMenu() }
+                .focusable(),
             contentAlignment = Alignment.Center
         ) {
             Image(
@@ -2764,6 +2801,16 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun MainMenuScreen() {
+        val context = LocalContext.current
+        val firstFocusRequester = remember { FocusRequester() }
+
+        LaunchedEffect(Unit) {
+            if (isTelevisionDevice(context)) {
+                delay(100)
+                runCatching { firstFocusRequester.requestFocus() }
+            }
+        }
+
         BackHandler {
             menuOpen = false
             homeOpen = true
@@ -2780,6 +2827,7 @@ class MainActivity : ComponentActivity() {
             Spacer(modifier = Modifier.height(20.dp))
 
             MediaPlayButton(
+                modifier = Modifier.focusRequester(firstFocusRequester),
                 onClick = {
                     menuOpen = false
                     mediaHubOpen = true
@@ -3552,6 +3600,7 @@ class MainActivity : ComponentActivity() {
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .clickable { openChat(id) }
+                                            .focusable()
                                             .padding(vertical = 12.dp)
                                     )
                                 }
@@ -3588,6 +3637,7 @@ class MainActivity : ComponentActivity() {
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .clickable { playing = video }
+                                            .focusable()
                                             .padding(vertical = 10.dp)
                                     ) {
                                         Text(video.title)
