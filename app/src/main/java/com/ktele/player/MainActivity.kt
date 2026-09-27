@@ -1266,6 +1266,29 @@ private const val MUSIC_BRANDING_HOOK = """
         return String(value || '').replace(brandPattern, 'K-Universe');
     }
 
+    function configureLanguageSuggestions(root) {
+        if (!root || !root.querySelectorAll) return;
+        var languageNodes = {};
+        root.querySelectorAll('button, [role="button"], a').forEach(function(node) {
+            var label = (node.innerText || node.textContent || '').trim().replace(/\s+/g, ' ');
+            if (/^(English|Telugu|Hindi|Tamil)$/i.test(label)) {
+                languageNodes[label.toLowerCase()] = node;
+            }
+        });
+        if (languageNodes.telugu) {
+            languageNodes.telugu.textContent = 'Malayalam';
+            languageNodes.malayalam = languageNodes.telugu;
+            delete languageNodes.telugu;
+        }
+        var ordered = ['malayalam', 'tamil', 'hindi', 'english']
+            .map(function(label) { return languageNodes[label]; })
+            .filter(Boolean);
+        if (ordered.length < 2) return;
+        var parent = ordered[0].parentElement;
+        if (!parent) return;
+        ordered.forEach(function(node) { parent.appendChild(node); });
+    }
+
     function replaceBranding(root) {
         if (!root) return;
         var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
@@ -1426,6 +1449,7 @@ private const val MUSIC_BRANDING_HOOK = """
     function runMusicCleanup() {
         if (!document.documentElement) return;
         replaceBranding(document.documentElement);
+        configureLanguageSuggestions(document.documentElement);
         hideNonMusicSections(document.documentElement);
         hideMusicChrome(document.documentElement);
         hideListenFreeFooter(document.documentElement);
@@ -3848,7 +3872,10 @@ class MainActivity : ComponentActivity() {
                       Row(modifier = Modifier.fillMaxWidth().background(Color(0xFF101010)).padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                           TextButton(onClick = { musicMode = "library" }) { Text("‹", color = Color.White, fontSize = 30.sp) }
                           AppLogo(modifier = Modifier.size(32.dp))
-                          Text("Browse Music", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 10.dp))
+                          Text("Browse Music", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f).padding(start = 10.dp))
+                          TextButton(onClick = { musicMode = "library" }) {
+                              Text("Song Search", color = Color(0xFF8CF5A7), fontSize = 12.sp)
+                          }
                       }
                       AndroidView(
                           factory = { viewContext ->
