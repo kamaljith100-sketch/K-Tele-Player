@@ -1277,6 +1277,7 @@ class MainActivity : ComponentActivity() {
     private var homeOpen by mutableStateOf(true)
     private var menuOpen by mutableStateOf(false)
     private var mediaHubOpen by mutableStateOf(false)
+    private var catalogOpen by mutableStateOf(false)
     private var telegramLoginOpen by mutableStateOf(false)
     private var iptvPlaylistUrl by mutableStateOf(DEFAULT_IPTV_PLAYLIST_URL)
     private var iptvChannels by mutableStateOf<List<IptvChannel>>(emptyList())
@@ -1910,6 +1911,7 @@ class MainActivity : ComponentActivity() {
             homeOpen -> HomeScreen()
             menuOpen -> MainMenuScreen()
             mediaHubOpen -> MediaHubScreen()
+            catalogOpen -> CatalogScreen()
             malayalamRadioOpen -> MalayalamRadioScreen()
             telegramLoginOpen -> TelegramLoginScreen()
             browserOpen -> {
@@ -2509,14 +2511,48 @@ class MainActivity : ComponentActivity() {
             return
         }
 
+        var selectedSource by remember { mutableStateOf("MovieRulz") }
         var selectedCategory by remember { mutableStateOf("All") }
-        val visibleMovies = if (selectedCategory == "All") {
-            catalogMovies
+        var sourceQueries by remember {
+            mutableStateOf(
+                mapOf(
+                    "MovieRulz" to "",
+                    "1TamilMV" to ""
+                )
+            )
+        }
+        val sourceCategories = if (selectedSource == "MovieRulz") {
+            listOf("All", "Malayalam", "Tamil", "Hollywood", "Dubbed", "Others")
         } else {
-            catalogMovies.filter { it.category == selectedCategory }
+            listOf("Home", "Movies", "Malayalam", "Tamil", "Hindi", "English")
+        }
+        val searchQuery = sourceQueries[selectedSource].orEmpty()
+        val visibleMovies = catalogMovies.filter { movie ->
+            val categoryMatches = when {
+                selectedSource == "MovieRulz" ->
+                    selectedCategory == "All" || movie.category == selectedCategory
+                selectedCategory == "Home" || selectedCategory == "Movies" ->
+                    true
+                selectedCategory == "English" ->
+                    movie.language.equals("English", ignoreCase = true)
+                else ->
+                    movie.category.equals(selectedCategory, ignoreCase = true)
+            }
+            val queryMatches = searchQuery.isBlank() ||
+                listOf(
+                    movie.title,
+                    movie.category,
+                    movie.language,
+                    movie.description,
+                    movie.quality,
+                    movie.license
+                ).any { value ->
+                    value.contains(searchQuery.trim(), ignoreCase = true)
+                }
+            categoryMatches && queryMatches
         }
 
-        BackHandler { iptvOpen = false }
+        BackHandler { catalogOpen = false }
 
         Column(
             modifier = Modifier
@@ -2547,18 +2583,76 @@ class MainActivity : ComponentActivity() {
                         color = Color(0xFFB9C2D0)
                     )
                 }
-                TextButton(onClick = { iptvOpen = false }) {
+                TextButton(onClick = { catalogOpen = false }) {
                     Text("Home")
                 }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                listOf("MovieRulz", "1TamilMV").forEach { source ->
+                    Button(
+                        onClick = {
+                            selectedSource = source
+                            selectedCategory =
+                                if (source == "MovieRulz") "All" else "Home"
+                        },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (selectedSource == source) {
+                                Color(0xFF13CFF0)
+                            } else {
+                                Color(0xFF171A28)
+                            },
+                            contentColor = if (selectedSource == source) {
+                                Color(0xFF05060B)
+                            } else {
+                                Color(0xFFF3F5FF)
+                            }
+                        ),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Text(source)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { value ->
+                    sourceQueries = sourceQueries + (selectedSource to value)
+                },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                label = { Text("Search $selectedSource") },
+                placeholder = { Text("Movie name, language, quality...") },
+                trailingIcon = {
+                    if (searchQuery.isNotBlank()) {
+                        TextButton(
+                            onClick = {
+                                sourceQueries = sourceQueries + (selectedSource to "")
+                            }
+                        ) {
+                            Text("Clear")
+                        }
+                    }
+                },
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search)
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
             LazyRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                items(catalogCategories) { category ->
+                items(sourceCategories) { category ->
                     Button(
                         onClick = { selectedCategory = category },
                         enabled = selectedCategory != category,
@@ -2574,10 +2668,10 @@ class MainActivity : ComponentActivity() {
             if (visibleMovies.isEmpty()) {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(ui.cardPadding)) {
-                        Text("No licensed titles yet", style = MaterialTheme.typography.titleMedium)
+                        Text("No titles found", style = MaterialTheme.typography.titleMedium)
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            "Add your own Malayalam, Tamil, Hindi or dubbed titles to the catalog data.",
+                            "Try another category or clear the $selectedSource search.",
                             color = Color(0xFFB9C2D0)
                         )
                     }
@@ -3716,25 +3810,21 @@ class MainActivity : ComponentActivity() {
 
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(ui.cardPadding)) {
-                    Text("Movies", style = MaterialTheme.typography.titleLarge)
+                    Text("Movie Browser", style = MaterialTheme.typography.titleLarge)
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        "Open a movie site in K- Univese's built-in browser.",
+                        "Search two source collections with separate category buttons and quality details.",
                         color = Color(0xFFB9C2D0)
                     )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Button(
+                        onClick = {
+                            mediaHubOpen = false
+                            catalogOpen = true
+                        },
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        movieSites.forEach { site ->
-                            TextButton(
-                                onClick = { openMovieSite(site.url) },
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text(site.name, maxLines = 1)
-                            }
-                        }
+                        Text("Open Movie Browser")
                     }
                 }
             }
