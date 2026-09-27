@@ -7,6 +7,7 @@
 
     <application
         android:allowBackup="true"
+        android:usesCleartextTraffic="true"
         android:icon="@drawable/ktele_player_logo"
         android:label="K- Univese"
         android:roundIcon="@drawable/ktele_player_logo"
