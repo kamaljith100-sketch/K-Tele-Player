@@ -366,7 +366,8 @@ private data class MalayalamRadioStation(
     val name: String,
     val frequency: String,
     val imageUrl: String,
-    val streamUrls: List<String>
+    val streamUrls: List<String>,
+    val pageUrl: String? = null
 )
 
 private val malayalamRadioStations = listOf(
@@ -410,6 +411,134 @@ private val malayalamRadioStations = listOf(
         streamUrls = listOf("https://centova.aarenworld.com/proxy/922radiokhushi/stream")
     )
 )
+
+private val malayalamRadioNavigationNames = setOf(
+    "home",
+    "hindi",
+    "akashvani",
+    "bollywood",
+    "tamil",
+    "malayalam",
+    "kannada",
+    "punjabi"
+)
+
+private fun cleanMalayalamRadioStationName(rawName: String): String =
+    rawName
+        .replace(Regex("<[^>]+>"), " ")
+        .replace("&amp;", "&")
+        .replace("&#39;", "'")
+        .replace("&quot;", "\"")
+        .replace(Regex("\\s+"), " ")
+        .trim()
+
+private fun resolveMalayalamRadioUrl(rawUrl: String): String {
+    val trimmed = rawUrl.trim()
+    return if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+        trimmed
+    } else {
+        "https://radiosindia.com/${trimmed.trimStart('/')}"
+    }
+}
+
+private fun directoryMalayalamRadioStation(
+    name: String,
+    pagePath: String
+): MalayalamRadioStation = MalayalamRadioStation(
+    name = name,
+    frequency = "Online radio",
+    imageUrl = "https://radiosindia.com/images/malayalamradio.jpg",
+    streamUrls = emptyList(),
+    pageUrl = resolveMalayalamRadioUrl(pagePath)
+)
+
+private val malayalamRadioDirectoryFallback = listOf(
+    "Suno Bahrain" to "radiosunobahrain.html",
+    "Ananthapuri" to "ananthapurifm.html",
+    "Radio Keralam 98.6 FM" to "radiokeralam.html",
+    "Live FM 1072" to "livefm1072.html",
+    "Radio Lemon" to "radiolemonlive.html",
+    "AIR Kerala" to "airmalayalam.html",
+    "Kochi FM" to "kochifm.html",
+    "AIR Devikulam" to "airdevikulam.html",
+    "Kozhikode FM" to "airkozhikodefm.html",
+    "Radio 90 FM" to "radio90fm.html",
+    "Radio Kerala" to "radiokerala.html",
+    "Nammude Radio" to "nammuderadio.html",
+    "My Radio FM" to "myradio90fm.html",
+    "AIR Kannur" to "airkannur.html",
+    "Hello Radio" to "helloradio.html",
+    "Benziger FM" to "radiobenziger.html",
+    "Aaha FM" to "aahafmradio.html",
+    "Manjeri FM" to "manjerifm.html",
+    "AIR Thrissur" to "akashvanithrissur.html",
+    "Radio Neythal" to "radioneythal.html",
+    "Radio Mattoli" to "radiomattoli.html",
+    "Ente Radio" to "enteradio.html",
+    "Janvani FM" to "janvanifm.html",
+    "Radio Macfast" to "radiomacfast.html",
+    "Global Radio" to "globalradio.html",
+    "Radio Malabar" to "radiomalabar.html",
+    "Ahalia FM" to "ahaliafm.html",
+    "June FM" to "junefm.html",
+    "Radio Mangalam" to "radiomangalam.html",
+    "Sargakshetra FM" to "sargakshetrafm.html"
+).map { (name, pagePath) -> directoryMalayalamRadioStation(name, pagePath) }
+
+private suspend fun loadMalayalamRadioDirectory(): List<MalayalamRadioStation> =
+    withContext(Dispatchers.IO) {
+        val connection = URL(MALAYALAM_RADIO_URL).openConnection() as? HttpURLConnection
+            ?: return@withContext emptyList()
+
+        try {
+            connection.connectTimeout = 15_000
+            connection.readTimeout = 30_000
+            connection.instanceFollowRedirects = true
+            connection.setRequestProperty(
+                "User-Agent",
+                IPTV_DEFAULT_USER_AGENT
+            )
+            connection.connect()
+            if (connection.responseCode !in 200..299) return@withContext emptyList()
+
+            val html = connection.inputStream.bufferedReader().use { it.readText() }
+            val linkPattern = Regex(
+                """<a\b[^>]*href\s*=\s*["']([^"']+\.html?)["'][^>]*>([\s\S]*?)</a>""",
+                RegexOption.IGNORE_CASE
+            )
+            val seenUrls = malayalamRadioStations
+                .mapNotNull { it.pageUrl }
+                .toMutableSet()
+
+            linkPattern.findAll(html).mapNotNull { match ->
+                val pageUrl = resolveMalayalamRadioUrl(match.groupValues[1])
+                val rawLabel = match.groupValues[2]
+                val name = cleanMalayalamRadioStationName(rawLabel).ifBlank {
+                    Regex("""(?:alt|title)\s*=\s*["']([^"']+)["']""")
+                        .find(rawLabel)
+                        ?.groupValues
+                        ?.getOrNull(1)
+                        ?.let(::cleanMalayalamRadioStationName)
+                        .orEmpty()
+                }
+                val lowerName = name.lowercase()
+                if (
+                    name.isBlank() ||
+                    lowerName in malayalamRadioNavigationNames ||
+                    pageUrl == MALAYALAM_RADIO_URL ||
+                    !seenUrls.add(pageUrl)
+                ) {
+                    null
+                } else {
+                    directoryMalayalamRadioStation(name, pageUrl)
+                }
+            }.toList()
+        } catch (_: Exception) {
+            emptyList()
+        } finally {
+            connection.disconnect()
+        }
+    }
 
 private const val DEFAULT_IPTV_PLAYLIST_URL = "https://iptv-org.github.io/iptv/index.m3u"
 private const val IPTV_DEFAULT_USER_AGENT =
@@ -2646,10 +2775,21 @@ class MainActivity : ComponentActivity() {
     private fun MalayalamRadioScreen() {
         val context = LocalContext.current
         val ui = rememberUiMetrics()
+        var stations by remember { mutableStateOf(malayalamRadioStations) }
+        var directoryLoading by remember { mutableStateOf(true) }
         var selectedStation by remember { mutableStateOf<MalayalamRadioStation?>(null) }
         var streamIndex by remember { mutableStateOf(0) }
         var isPlaying by remember { mutableStateOf(false) }
         var radioError by remember { mutableStateOf("") }
+
+        LaunchedEffect(Unit) {
+            val discoveredStations = loadMalayalamRadioDirectory()
+            stations = malayalamRadioStations +
+                (malayalamRadioDirectoryFallback + discoveredStations)
+                    .distinctBy { it.pageUrl ?: it.name }
+            directoryLoading = false
+        }
+
         val player = remember(context) {
             ExoPlayer.Builder(context).build().apply {
                 setAudioAttributes(
@@ -2663,6 +2803,11 @@ class MainActivity : ComponentActivity() {
         }
 
         fun startStation(station: MalayalamRadioStation) {
+            if (station.streamUrls.isEmpty()) {
+                station.pageUrl?.let { openInAppBrowser(it, radioOnly = true) }
+                return
+            }
+
             val sameStation = selectedStation?.name == station.name
             if (sameStation && player.isPlaying) {
                 player.pause()
@@ -2750,7 +2895,7 @@ class MainActivity : ComponentActivity() {
                                 openInAppBrowser(MALAYALAM_RADIO_URL, radioOnly = true)
                             }
                         ) {
-                            Text("More stations")
+                            Text("More")
                         }
                         TextButton(onClick = { closeRadio() }) {
                             Text("Back")
@@ -2763,6 +2908,13 @@ class MainActivity : ComponentActivity() {
                     color = Color(0xFF13CFF0),
                     style = MaterialTheme.typography.bodySmall
                 )
+                if (directoryLoading) {
+                    Text(
+                        "കൂടുതൽ stations load ചെയ്യുന്നു…",
+                        color = Color(0xFFB9C2D0),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
             }
 
             item {
@@ -2786,7 +2938,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            items(malayalamRadioStations, key = { it.name }) { station ->
+            items(stations, key = { it.pageUrl ?: it.name }) { station ->
                 MalayalamRadioStationCard(
                     station = station,
                     isCurrent = selectedStation?.name == station.name,
@@ -2830,7 +2982,13 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 Button(onClick = onPlayPause) {
-                    Text(if (isCurrent && isPlaying) "Pause" else "Play")
+                    Text(
+                        when {
+                            station.streamUrls.isEmpty() -> "Open"
+                            isCurrent && isPlaying -> "Pause"
+                            else -> "Play"
+                        }
+                    )
                 }
             }
         }
