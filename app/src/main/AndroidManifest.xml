@@ -5,9 +5,17 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
 
+    <uses-feature
+        android:name="android.software.leanback"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.touchscreen"
+        android:required="false" />
+
     <application
         android:allowBackup="true"
         android:usesCleartextTraffic="true"
+        android:banner="@drawable/ktele_player_logo"
         android:icon="@drawable/ktele_player_logo"
         android:label="K- Univese"
         android:roundIcon="@drawable/ktele_player_logo"
@@ -17,11 +25,18 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:resizeableActivity="true"
+            android:screenOrientation="fullSensor"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden">
 
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
 
         </activity>
