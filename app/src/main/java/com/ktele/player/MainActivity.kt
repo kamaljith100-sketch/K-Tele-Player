@@ -4071,7 +4071,8 @@ class MainActivity : ComponentActivity() {
           BackHandler {
               when {
                   musicMode == "browse" && musicWebView?.canGoBack() == true -> musicWebView?.goBack()
-                  musicMode != "library" -> musicMode = "library"
+                  musicMode == "now" -> musicMode = "browse"
+                  else -> closeMusicBrowser()
                   else -> closeMusicBrowser()
               }
           }
@@ -4126,7 +4127,7 @@ class MainActivity : ComponentActivity() {
                   } else 0f
                   Column(modifier = Modifier.fillMaxSize().background(Color(0xFF0B2818))) {
                       Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                          TextButton(onClick = { musicMode = "library" }) { Text("‹", color = Color.White, fontSize = 32.sp) }
+                          TextButton(onClick = { musicMode = "browse" }) { Text("‹", color = Color.White, fontSize = 32.sp) }
                           Text("NOW PLAYING", color = Color.White, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                           Text("⋮", color = Color.White, fontSize = 26.sp)
                       }
@@ -4185,7 +4186,7 @@ class MainActivity : ComponentActivity() {
                           }
                       }
                       Row(modifier = Modifier.fillMaxWidth().background(Color(0xFF123A23)).padding(vertical = 5.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-                          TextButton(onClick = { musicWebView?.stopLoading(); musicMode = "library" }) { Text("⌂  Library", color = Color(0xFF8CF5A7), fontSize = 12.sp) }
+                          TextButton(onClick = { musicWebView?.stopLoading(); musicMode = "browse" }) { Text("⌕  Browse", color = Color(0xFF8CF5A7), fontSize = 12.sp) }
                           TextButton(onClick = { musicMode = "browse" }) { Text("⌕  Browse", color = Color(0xFFBDBDBD), fontSize = 12.sp) }
                           TextButton(onClick = { closeMusicBrowser() }) { Text("‹  Media", color = Color(0xFFBDBDBD), fontSize = 12.sp) }
                       }
@@ -4195,7 +4196,7 @@ class MainActivity : ComponentActivity() {
               "browse" -> {
                   Column(modifier = Modifier.fillMaxSize().background(Color(0xFF080808))) {
                       Row(modifier = Modifier.fillMaxWidth().background(Color(0xFF101010)).padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                          TextButton(onClick = { musicMode = "library" }) { Text("‹", color = Color.White, fontSize = 30.sp) }
+                          TextButton(onClick = { closeMusicBrowser() }) { Text("‹", color = Color.White, fontSize = 30.sp) }
                           AppLogo(modifier = Modifier.size(32.dp))
                           Text("Browse Music", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f).padding(start = 10.dp))
                            TextButton(onClick = { browseSearchFocusRequester.requestFocus() }) {
@@ -4368,159 +4369,12 @@ class MainActivity : ComponentActivity() {
                            )
                        }
                       Row(modifier = Modifier.fillMaxWidth().background(Color(0xFF123A23)).padding(vertical = 5.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-                          TextButton(onClick = { musicMode = "library" }) { Text("⌂  Library", color = Color(0xFF8CF5A7), fontSize = 12.sp) }
                           TextButton(onClick = { musicWebView?.reload() }) { Text("⌕  Browse", color = Color.White, fontSize = 12.sp) }
                           TextButton(onClick = { closeMusicBrowser() }) { Text("‹  Media", color = Color(0xFFBDBDBD), fontSize = 12.sp) }
                       }
                   }
               }
 
-              else -> {
-                  val visibleSongs = kUniverseSongs.filter { song ->
-                      (selectedGenre == null || song.genres.contains(selectedGenre)) &&
-                          (searchQuery.isBlank() || song.title.contains(searchQuery, ignoreCase = true) || song.artist.contains(searchQuery, ignoreCase = true)) &&
-                          likedSongs.contains(song.title)
-                  }
-
-                  fun resolveTrackForAction(song: KUniverseSong, action: (String) -> Unit) {
-                      openMenuSong = null
-                      downloadStatus = "Preparing ${song.title}..."
-                      musicScope.launch {
-                          val resolved = if (!song.streamUrl.isNullOrBlank()) {
-                              song.streamUrl?.let { ResolvedMusicTrack(it, song.durationSeconds, song.imageUrl) }
-                          } else {
-                              withContext(Dispatchers.IO) { resolveMusicTrack(song) }
-                          }
-                          if (resolved == null) {
-                              downloadStatus = "Download link is not available for ${song.title}."
-                          } else {
-                              action(resolved.streamUrl)
-                          }
-                      }
-                  }
-                  Column(modifier = Modifier.fillMaxSize().background(Color(0xFF174D2A))) {
-                      Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-                          Column(modifier = Modifier.weight(1f)) {
-                              Text("Liked Songs", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
-                              Text("${kUniverseSongs.size} Songs", color = Color(0xFFB4D6B8), fontSize = 13.sp)
-                          }
-                          TextButton(
-                              enabled = kUniverseSongs.isNotEmpty(),
-                              onClick = { if (kUniverseSongs.isNotEmpty()) openSong(kUniverseSongs.first()) }
-                          ) { Text("▶", color = if (kUniverseSongs.isNotEmpty()) Color(0xFF50E879) else Color(0xFF5A7A63), fontSize = 30.sp) }
-                      }
-                      Row(
-                          modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp),
-                          horizontalArrangement = Arrangement.spacedBy(8.dp)
-                      ) {
-                          listOf("Chill", "EDM", "Pop", "Rap", "Folk", "Indie").forEach { tag ->
-                              val selected = selectedGenre == tag
-                              TextButton(
-                                  onClick = { selectedGenre = if (selected) null else tag },
-                                  contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-                                  modifier = Modifier.border(1.dp, if (selected) Color(0xFF50E879) else Color(0xFF8ABF91), RoundedCornerShape(12.dp))
-                              ) {
-                                  Text(tag, color = if (selected) Color(0xFF50E879) else Color.White, fontSize = 11.sp)
-                              }
-                          }
-                      }
-                      OutlinedTextField(
-                          value = searchQuery,
-                          onValueChange = { searchQuery = it },
-                          placeholder = { Text("Search songs or artists") },
-                          singleLine = true,
-                          modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp)
-                      )
-                      TextButton(onClick = { musicMode = "browse" }, modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
-                          Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                              Text("＋", color = Color.White, fontSize = 28.sp)
-                              Text("Add Songs / Browse Music", color = Color.White, fontSize = 16.sp, modifier = Modifier.padding(start = 10.dp))
-                          }
-                      }
-                      downloadStatus?.let { status ->
-                          Text(status, color = Color(0xFFB4D6B8), fontSize = 12.sp, modifier = Modifier.padding(horizontal = 18.dp, vertical = 2.dp))
-                      }
-                      if (visibleSongs.isEmpty()) {
-                          Text(
-                              if (kUniverseSongs.isEmpty()) "Your playlist is empty. Browse music to add songs." else "No songs match this filter.",
-                              color = Color(0xFFB4D6B8),
-                              fontSize = 14.sp,
-                              modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp)
-                          )
-                      }
-                      LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f), contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)) {
-                          items(visibleSongs) { song ->
-                              Row(modifier = Modifier.fillMaxWidth().clickable { openSong(song) }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                  AppLogo(modifier = Modifier.size(52.dp))
-                                  Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
-                                      Text(song.title, color = Color.White, fontSize = 15.sp, maxLines = 1)
-                                      Text(song.artist, color = Color(0xFFB4D6B8), fontSize = 12.sp, maxLines = 1)
-                                  }
-                                  TextButton(
-                                      onClick = {
-                                          likedSongs = if (likedSongs.contains(song.title)) likedSongs - song.title else likedSongs + song.title
-                                      },
-                                      contentPadding = PaddingValues(0.dp),
-                                      modifier = Modifier.size(40.dp)
-                                  ) {
-                                      Text(if (likedSongs.contains(song.title)) "♥" else "♡", color = if (likedSongs.contains(song.title)) Color(0xFFFF1F3D) else Color(0xFFB4D6B8), fontSize = 20.sp)
-                                  }
-                                  Box {
-                                      TextButton(
-                                          onClick = { openMenuSong = if (openMenuSong == song.title) null else song.title },
-                                          contentPadding = PaddingValues(0.dp),
-                                          modifier = Modifier.size(40.dp)
-                                      ) { Text("⋯", color = Color(0xFFB4D6B8), fontSize = 22.sp) }
-                                      DropdownMenu(
-                                          expanded = openMenuSong == song.title,
-                                          onDismissRequest = { openMenuSong = null }
-                                      ) {
-                                          DropdownMenuItem(
-                                              text = { Text("Download link") },
-                                              onClick = {
-                                                  resolveTrackForAction(song) { streamUrl ->
-                                                      downloadStatus = if (enqueueMusicDownload(musicContext, song, streamUrl)) {
-                                                          "Download started for ${song.title}."
-                                                      } else {
-                                                          "Could not start the download."
-                                                      }
-                                                  }
-                                              }
-                                          )
-                                          DropdownMenuItem(
-                                              text = { Text("Copy download link") },
-                                              onClick = {
-                                                  resolveTrackForAction(song) { streamUrl ->
-                                                      downloadStatus = if (copyMusicDownloadLink(musicContext, song, streamUrl)) {
-                                                          "Download link copied."
-                                                      } else {
-                                                          "Could not copy the download link."
-                                                      }
-                                                  }
-                                              }
-                                          )
-                                      }
-                                  }
-                              }
-                          }
-                      }
-                  if (selectedSong.streamUrl != null) {
-                          Row(modifier = Modifier.fillMaxWidth().background(Color(0xFF0D2416)).padding(horizontal = 12.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-                              AppLogo(modifier = Modifier.size(42.dp))
-                              Column(modifier = Modifier.weight(1f).padding(start = 10.dp)) {
-                                  Text(selectedSong.title, color = Color.White, fontSize = 13.sp, maxLines = 1)
-                                  Text(selectedSong.artist, color = Color(0xFFB4D6B8), fontSize = 11.sp)
-                              }
-                  TextButton(onClick = { togglePlayback() }) { Text(if (isPlaying) "Ⅱ" else "▶", color = Color.White, fontSize = 20.sp) }
-                          }
-                      }
-                      Row(modifier = Modifier.fillMaxWidth().background(Color(0xFF123A23)).padding(vertical = 5.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-                          TextButton(onClick = { musicMode = "library" }) { Text("⌂  Library", color = Color(0xFF8CF5A7), fontSize = 12.sp) }
-                          TextButton(onClick = { musicMode = "browse" }) { Text("⌕  Browse", color = Color(0xFFBDBDBD), fontSize = 12.sp) }
-                          TextButton(onClick = { closeMusicBrowser() }) { Text("‹  Media", color = Color(0xFFBDBDBD), fontSize = 12.sp) }
-                      }
-                  }
-              }
           }
       }
         private fun openMovieSite(url: String) {
