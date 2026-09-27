@@ -2720,7 +2720,8 @@ class MainActivity : ComponentActivity() {
 
         LazyColumn(
             modifier = Modifier
-                .fillMaxSize()
+                .fillMaxWidth()
+                .heightIn(max = 620.dp)
                 .padding(ui.screenPadding),
             verticalArrangement = Arrangement.spacedBy(10.dp),
             userScrollEnabled = true
