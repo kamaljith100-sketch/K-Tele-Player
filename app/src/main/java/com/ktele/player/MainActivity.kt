@@ -531,22 +531,16 @@ class TorrentDataSource(
         }
     }
 
-    private fun waitForPieces(start: Long, length: Int): Boolean {
-        val pieceLength = torrent.getTorrentHandle().torrentFile().pieceLength().toLong()
-        if (pieceLength <= 0L) return true
-
-        var pieceOffset = (start / pieceLength) * pieceLength
-        val end = start + length.toLong()
-        while (pieceOffset < end) {
-            while (!torrent.hasBytes(pieceOffset)) {
-                try {
-                    Thread.sleep(50L)
-                } catch (e: InterruptedException) {
-                    Thread.currentThread().interrupt()
-                    return false
-                }
+    private fun waitForPiece(pieceOffset: Long): Boolean {
+        while (!torrent.hasBytes(pieceOffset)) {
+            // Keep the download window following the player as it reads forward.
+            torrent.setInterestedBytes(pieceOffset)
+            try {
+                Thread.sleep(50L)
+            } catch (e: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return false
             }
-            pieceOffset += pieceLength
         }
         return true
     }
@@ -557,9 +551,23 @@ class TorrentDataSource(
         if (position >= endPosition) return C.RESULT_END_OF_INPUT
 
         val allowed = minOf(length.toLong(), endPosition - position).toInt()
-        if (!waitForPieces(position, allowed)) return C.RESULT_END_OF_INPUT
+        val pieceLength = torrent.getTorrentHandle().torrentFile().pieceLength().toLong()
+        val untilPieceEnd = if (pieceLength > 0L) {
+            pieceLength - (position % pieceLength)
+        } else {
+            allowed.toLong()
+        }
+        // Never wait for a whole large ExoPlayer request. Return the first ready
+        // piece immediately so Media3 can start rendering while the next pieces load.
+        val chunkLength = minOf(allowed.toLong(), untilPieceEnd).toInt()
+        val pieceOffset = if (pieceLength > 0L) {
+            (position / pieceLength) * pieceLength
+        } else {
+            position
+        }
+        if (!waitForPiece(pieceOffset)) return C.RESULT_END_OF_INPUT
 
-        val count = randomAccessFile.read(buffer, offset, allowed)
+        val count = randomAccessFile.read(buffer, offset, chunkLength)
         if (count <= 0) return C.RESULT_END_OF_INPUT
 
         position += count
