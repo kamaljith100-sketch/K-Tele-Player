@@ -2726,7 +2726,12 @@ class MainActivity : ComponentActivity() {
             userScrollEnabled = true
         ) {
             item {
-                AdaptiveLogo(Modifier.align(Alignment.CenterHorizontally))
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    AdaptiveLogo()
+                }
                 Spacer(modifier = Modifier.height(12.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
