@@ -1,6 +1,7 @@
 package com.ktele.player
 
 import android.app.Activity
+import android.app.DownloadManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -9,6 +10,7 @@ import android.graphics.Color as AndroidColor
 import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.os.Bundle
+import android.os.Environment
 import android.os.SystemClock
 import android.view.View
 import android.view.WindowManager
@@ -51,6 +53,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -247,20 +251,14 @@ private val kTeleColorScheme = darkColorScheme(
 private data class KUniverseSong(
     val title: String,
     val artist: String,
+    val genres: Set<String> = emptySet(),
     val searchQuery: String = title,
     val streamUrl: String? = null,
     val durationSeconds: Int = 0,
     val imageUrl: String? = null
 )
 
-private val kUniverseSongs = listOf(
-    KUniverseSong("All Yi Ali", "Ali Gelich", "Ya Ali"),
-    KUniverseSong("Salam Hussain", "Nadeem Sarwar"),
-    KUniverseSong("Sara Zamana Mary Hussain Ka Hai", "Farhan Ali Waris"),
-    KUniverseSong("Janum Ali Ali", "Nadeem Sarwar"),
-    KUniverseSong("Salam Ghazi Salam Ghazi", "Nadeem Sarwar"),
-    KUniverseSong("Abbas Ka Saha Hai", "Naat Collection")
-)
+private val kUniverseSongs = emptyList<KUniverseSong>()
 
 private data class ResolvedMusicTrack(
     val streamUrl: String,
@@ -317,6 +315,29 @@ private fun resolveMusicTrack(song: KUniverseSong): ResolvedMusicTrack? {
     val images = track.optJSONArray("image")
     val imageUrl = images?.optJSONObject(images.length() - 1)?.optString("url")?.takeIf { it.isNotBlank() }
     return ResolvedMusicTrack(streamUrl, track.optInt("duration", 0), imageUrl)
+}
+
+private fun enqueueMusicDownload(context: Context, song: KUniverseSong, streamUrl: String): Boolean {
+    val safeTitle = song.title.replace(Regex("[^A-Za-z0-9 _-]"), "_").trim().ifBlank { "K-Universe-track" }
+    return runCatching {
+        val request = DownloadManager.Request(Uri.parse(streamUrl))
+            .setTitle("$safeTitle - K-Universe")
+            .setDescription("Downloading music")
+            .setMimeType("audio/mpeg")
+            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            .setAllowedOverMetered(true)
+            .setAllowedOverRoaming(true)
+            .setDestinationInExternalPublicDir(Environment.DIRECTORY_MUSIC, "K-Universe/$safeTitle.mp3")
+        val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+        manager.enqueue(request)
+        true
+    }.getOrDefault(false)
+}
+
+private fun copyMusicDownloadLink(context: Context, song: KUniverseSong, streamUrl: String): Boolean {
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager ?: return false
+    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("${song.title} download link", streamUrl))
+    return true
 }
 
 private fun formatMusicTime(milliseconds: Long): String {
@@ -3602,7 +3623,11 @@ class MainActivity : ComponentActivity() {
       @Composable
       private fun MusicBrowserScreen() {
           var musicMode by remember { mutableStateOf("library") }
-          var selectedSong by remember { mutableStateOf(kUniverseSongs[3]) }
+          var selectedSong by remember { mutableStateOf(kUniverseSongs.getOrNull(3) ?: KUniverseSong("No song selected", "")) }
+          var selectedGenre by remember { mutableStateOf<String?>(null) }
+          var likedSongs by remember { mutableStateOf(kUniverseSongs.map { it.title }.toSet()) }
+          var openMenuSong by remember { mutableStateOf<String?>(null) }
+          var downloadStatus by remember { mutableStateOf<String?>(null) }
           var isPlaying by remember { mutableStateOf(false) }
           var isLoadingSong by remember { mutableStateOf(false) }
           var playbackError by remember { mutableStateOf<String?>(null) }
@@ -3881,7 +3906,26 @@ class MainActivity : ComponentActivity() {
 
               else -> {
                   val visibleSongs = kUniverseSongs.filter { song ->
-                      searchQuery.isBlank() || song.title.contains(searchQuery, ignoreCase = true) || song.artist.contains(searchQuery, ignoreCase = true)
+                      (selectedGenre == null || song.genres.contains(selectedGenre)) &&
+                          (searchQuery.isBlank() || song.title.contains(searchQuery, ignoreCase = true) || song.artist.contains(searchQuery, ignoreCase = true)) &&
+                          likedSongs.contains(song.title)
+                  }
+
+                  fun resolveTrackForAction(song: KUniverseSong, action: (String) -> Unit) {
+                      openMenuSong = null
+                      downloadStatus = "Preparing ${song.title}..."
+                      musicScope.launch {
+                          val resolved = if (!song.streamUrl.isNullOrBlank()) {
+                              song.streamUrl?.let { ResolvedMusicTrack(it, song.durationSeconds, song.imageUrl) }
+                          } else {
+                              withContext(Dispatchers.IO) { resolveMusicTrack(song) }
+                          }
+                          if (resolved == null) {
+                              downloadStatus = "Download link is not available for ${song.title}."
+                          } else {
+                              action(resolved.streamUrl)
+                          }
+                      }
                   }
                   Column(modifier = Modifier.fillMaxSize().background(Color(0xFF174D2A))) {
                       Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 18.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -3889,11 +3933,24 @@ class MainActivity : ComponentActivity() {
                               Text("Liked Songs", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
                               Text("${kUniverseSongs.size} Songs", color = Color(0xFFB4D6B8), fontSize = 13.sp)
                           }
-                          TextButton(onClick = { if (kUniverseSongs.isNotEmpty()) openSong(kUniverseSongs.first()) }) { Text("▶", color = Color(0xFF50E879), fontSize = 30.sp) }
+                          TextButton(
+                              enabled = kUniverseSongs.isNotEmpty(),
+                              onClick = { if (kUniverseSongs.isNotEmpty()) openSong(kUniverseSongs.first()) }
+                          ) { Text("▶", color = if (kUniverseSongs.isNotEmpty()) Color(0xFF50E879) else Color(0xFF5A7A63), fontSize = 30.sp) }
                       }
-                      Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                      Row(
+                          modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp),
+                          horizontalArrangement = Arrangement.spacedBy(8.dp)
+                      ) {
                           listOf("Chill", "EDM", "Pop", "Rap", "Folk", "Indie").forEach { tag ->
-                              Text(tag, color = Color.White, fontSize = 11.sp, modifier = Modifier.border(1.dp, Color(0xFF8ABF91), RoundedCornerShape(12.dp)).padding(horizontal = 10.dp, vertical = 5.dp))
+                              val selected = selectedGenre == tag
+                              TextButton(
+                                  onClick = { selectedGenre = if (selected) null else tag },
+                                  contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                                  modifier = Modifier.border(1.dp, if (selected) Color(0xFF50E879) else Color(0xFF8ABF91), RoundedCornerShape(12.dp))
+                              ) {
+                                  Text(tag, color = if (selected) Color(0xFF50E879) else Color.White, fontSize = 11.sp)
+                              }
                           }
                       }
                       OutlinedTextField(
@@ -3909,6 +3966,17 @@ class MainActivity : ComponentActivity() {
                               Text("Add Songs / Browse Music", color = Color.White, fontSize = 16.sp, modifier = Modifier.padding(start = 10.dp))
                           }
                       }
+                      downloadStatus?.let { status ->
+                          Text(status, color = Color(0xFFB4D6B8), fontSize = 12.sp, modifier = Modifier.padding(horizontal = 18.dp, vertical = 2.dp))
+                      }
+                      if (visibleSongs.isEmpty()) {
+                          Text(
+                              if (kUniverseSongs.isEmpty()) "Your playlist is empty. Browse music to add songs." else "No songs match this filter.",
+                              color = Color(0xFFB4D6B8),
+                              fontSize = 14.sp,
+                              modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp)
+                          )
+                      }
                       LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f), contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)) {
                           items(visibleSongs) { song ->
                               Row(modifier = Modifier.fillMaxWidth().clickable { openSong(song) }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -3917,8 +3985,51 @@ class MainActivity : ComponentActivity() {
                                       Text(song.title, color = Color.White, fontSize = 15.sp, maxLines = 1)
                                       Text(song.artist, color = Color(0xFFB4D6B8), fontSize = 12.sp, maxLines = 1)
                                   }
-                                  Text("♥", color = Color(0xFF50E879), fontSize = 20.sp)
-                                  Text("⋯", color = Color(0xFFB4D6B8), fontSize = 22.sp, modifier = Modifier.padding(start = 10.dp))
+                                  TextButton(
+                                      onClick = {
+                                          likedSongs = if (likedSongs.contains(song.title)) likedSongs - song.title else likedSongs + song.title
+                                      },
+                                      contentPadding = PaddingValues(0.dp),
+                                      modifier = Modifier.size(40.dp)
+                                  ) {
+                                      Text(if (likedSongs.contains(song.title)) "♥" else "♡", color = if (likedSongs.contains(song.title)) Color(0xFFFF1F3D) else Color(0xFFB4D6B8), fontSize = 20.sp)
+                                  }
+                                  Box {
+                                      TextButton(
+                                          onClick = { openMenuSong = if (openMenuSong == song.title) null else song.title },
+                                          contentPadding = PaddingValues(0.dp),
+                                          modifier = Modifier.size(40.dp)
+                                      ) { Text("⋯", color = Color(0xFFB4D6B8), fontSize = 22.sp) }
+                                      DropdownMenu(
+                                          expanded = openMenuSong == song.title,
+                                          onDismissRequest = { openMenuSong = null }
+                                      ) {
+                                          DropdownMenuItem(
+                                              text = { Text("Download link") },
+                                              onClick = {
+                                                  resolveTrackForAction(song) { streamUrl ->
+                                                      downloadStatus = if (enqueueMusicDownload(musicContext, song, streamUrl)) {
+                                                          "Download started for ${song.title}."
+                                                      } else {
+                                                          "Could not start the download."
+                                                      }
+                                                  }
+                                              }
+                                          )
+                                          DropdownMenuItem(
+                                              text = { Text("Copy download link") },
+                                              onClick = {
+                                                  resolveTrackForAction(song) { streamUrl ->
+                                                      downloadStatus = if (copyMusicDownloadLink(musicContext, song, streamUrl)) {
+                                                          "Download link copied."
+                                                      } else {
+                                                          "Could not copy the download link."
+                                                      }
+                                                  }
+                                              }
+                                          )
+                                      }
+                                  }
                               }
                           }
                       }
