@@ -2710,67 +2710,73 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        BackHandler {
+        fun closeRadio() {
             player.stop()
             malayalamRadioOpen = false
             mediaHubOpen = true
         }
 
-        Column(
+        BackHandler { closeRadio() }
+
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(ui.screenPadding)
+                .padding(ui.screenPadding),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            userScrollEnabled = true
         ) {
-            AdaptiveLogo(Modifier.align(Alignment.CenterHorizontally))
-            Spacer(modifier = Modifier.height(12.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column {
-                    Text("Malayalam Radio", style = MaterialTheme.typography.headlineMedium)
-                    Text("Malayalam FM radio stations online", color = Color(0xFFB9C2D0))
+            item {
+                AdaptiveLogo(Modifier.align(Alignment.CenterHorizontally))
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column {
+                        Text("Malayalam Radio", style = MaterialTheme.typography.headlineMedium)
+                        Text("Malayalam FM radio stations online", color = Color(0xFFB9C2D0))
+                    }
+                    TextButton(onClick = { closeRadio() }) {
+                        Text("Back")
+                    }
                 }
-                TextButton(onClick = {
-                    player.stop()
-                    malayalamRadioOpen = false
-                    mediaHubOpen = true
-                }) {
-                    Text("Back")
-                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    "താഴെയുള്ള ചാനലുകൾ കാണാൻ മുകളിലേക്ക് swipe ചെയ്യുക",
+                    color = Color(0xFF13CFF0),
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
 
-            Spacer(modifier = Modifier.height(18.dp))
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(ui.cardPadding)) {
-                    Text(
-                        if (selectedStation == null) "ഒരു station തിരഞ്ഞെടുക്കൂ"
-                        else "Now playing: ${selectedStation!!.name}",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Text(
-                        if (isPlaying) "● LIVE"
-                        else "Play ബട്ടൺ അമർത്തി കേൾക്കാം",
-                        color = if (isPlaying) Color(0xFF55E39B) else Color(0xFFB9C2D0)
-                    )
-                    if (radioError.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(radioError, color = Color(0xFFFF6B84))
+            item {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(ui.cardPadding)) {
+                        Text(
+                            if (selectedStation == null) "ഒരു station തിരഞ്ഞെടുക്കൂ"
+                            else "Now playing: ${selectedStation!!.name}",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            if (isPlaying) "● LIVE"
+                            else "Play ബട്ടൺ അമർത്തി കേൾക്കാം",
+                            color = if (isPlaying) Color(0xFF55E39B) else Color(0xFFB9C2D0)
+                        )
+                        if (radioError.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(radioError, color = Color(0xFFFF6B84))
+                        }
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
-            malayalamRadioStations.forEach { station ->
+            items(malayalamRadioStations, key = { it.name }) { station ->
                 MalayalamRadioStationCard(
                     station = station,
                     isCurrent = selectedStation?.name == station.name,
                     isPlaying = isPlaying,
                     onPlayPause = { startStation(station) }
                 )
-                Spacer(modifier = Modifier.height(10.dp))
             }
         }
     }
