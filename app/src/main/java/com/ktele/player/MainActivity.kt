@@ -1153,6 +1153,31 @@ private const val MUSIC_BRANDING_HOOK = """
         });
     }
 
+    var nonMusicPattern = /(?:product\s+updates|new\s+features\s+released|bugs\s+fixed|tune\s*free|beta\s+version\s+right\s+now|give\s+feedback\s+to\s+improve|open\s+tune\s*free|copy\s+link)/i;
+
+    function hideNonMusicSections(root) {
+        if (!root || !root.querySelectorAll) return;
+        root.querySelectorAll('h1,h2,h3,h4,h5,p,span,div,a,button').forEach(function(node) {
+            var text = (node.innerText || node.textContent || '').trim();
+            if (!text || text.length > 700 || !nonMusicPattern.test(text)) return;
+            var target = node;
+            for (var depth = 0; depth < 5 && target.parentElement; depth++) {
+                var candidate = target.parentElement;
+                var candidateText = (candidate.innerText || '').trim();
+                if (candidate === document.body || candidate === document.documentElement) break;
+                if (candidateText.length >= 35 && candidateText.length <= 1400 &&
+                    (candidate.querySelector('a,button') || candidateText.indexOf('\n') >= 0)) {
+                    target = candidate;
+                } else {
+                    break;
+                }
+            }
+            if (target !== document.body && target !== document.documentElement) {
+                target.style.setProperty('display', 'none', 'important');
+            }
+        });
+    }
+
     function addBrandBadge() {
         if (document.getElementById('__kteleBrandBadge') || !document.body) return;
         var badge = document.createElement('div');
@@ -1163,11 +1188,15 @@ private const val MUSIC_BRANDING_HOOK = """
     }
 
     replaceBranding(document.documentElement);
+    hideNonMusicSections(document.documentElement);
     addBrandBadge();
     new MutationObserver(function(records) {
         records.forEach(function(record) {
             record.addedNodes.forEach(function(node) {
-                if (node.nodeType === 1) replaceBranding(node);
+                if (node.nodeType === 1) {
+                    replaceBranding(node);
+                    hideNonMusicSections(node);
+                }
             });
         });
         addBrandBadge();
