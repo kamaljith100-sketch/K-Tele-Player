@@ -81,6 +81,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.viewinterop.AndroidView
 
+import coil.compose.AsyncImage
+
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -359,6 +361,55 @@ data class IptvChannel(
     val referrer: String? = null
 )
 
+private data class MalayalamRadioStation(
+    val name: String,
+    val frequency: String,
+    val imageUrl: String,
+    val streamUrls: List<String>
+)
+
+private val malayalamRadioStations = listOf(
+    MalayalamRadioStation(
+        name = "Mirchi Kochi",
+        frequency = "98.3 FM",
+        imageUrl = "https://radiosindia.com/images/radiomirchi.jpg",
+        streamUrls = listOf(
+            "https://stream.aiir.com/dbv0rxpwp6ytv",
+            "https://sp14.instainternet.com/8050/stream"
+        )
+    ),
+    MalayalamRadioStation(
+        name = "Club FM",
+        frequency = "94.3 FM",
+        imageUrl = "https://radiosindia.com/images/clubfm.jpg",
+        streamUrls = listOf(
+            "https://listen.openstream.co/4635/audio",
+            "https://listen.openstream.co/4626/audio"
+        )
+    ),
+    MalayalamRadioStation(
+        name = "Radio Mango",
+        frequency = "91.9 FM",
+        imageUrl = "https://radiosindia.com/images/radiomango.jpg",
+        streamUrls = listOf(
+            "https://stream.radiomango.fm/live",
+            "https://radiomangoalive1-a.akamaihd.net/9268677ef77949a9b21d33239a55eadd/ap-southeast-1/6034685947001/playlist.m3u8"
+        )
+    ),
+    MalayalamRadioStation(
+        name = "Radio Suno",
+        frequency = "91.7 FM",
+        imageUrl = "https://radiosindia.com/images/radiosuno.jpg",
+        streamUrls = listOf("https://playerservices.streamtheworld.com/api/livestream-redirect/SUNO917_SC")
+    ),
+    MalayalamRadioStation(
+        name = "Home FM",
+        frequency = "Online radio",
+        imageUrl = "https://radiosindia.com/images/homefm.jpg",
+        streamUrls = listOf("https://centova.aarenworld.com/proxy/922radiokhushi/stream")
+    )
+)
+
 private const val DEFAULT_IPTV_PLAYLIST_URL = "https://iptv-org.github.io/iptv/index.m3u"
 private const val IPTV_DEFAULT_USER_AGENT =
     "Mozilla/5.0 (Android) AppleWebKit/537.36 Chrome/131.0 Mobile Safari/537.36"
@@ -446,6 +497,17 @@ private fun buildIptvMediaItem(channel: IptvChannel): MediaItem {
     }
     return builder.build()
 }
+
+private fun buildMalayalamRadioMediaItem(
+    station: MalayalamRadioStation,
+    streamIndex: Int
+): MediaItem = buildIptvMediaItem(
+    IptvChannel(
+        name = station.name,
+        category = "Malayalam Radio",
+        streamUrl = station.streamUrls[streamIndex]
+    )
+)
 
 data class VideoItem(
 
@@ -916,6 +978,7 @@ class MainActivity : ComponentActivity() {
     private var browserOpen by mutableStateOf(false)
     private var selectedBrowserUrl by mutableStateOf<String?>(null)
     private var radioOnlyMode by mutableStateOf(false)
+    private var malayalamRadioOpen by mutableStateOf(false)
     private var iptvOpen by mutableStateOf(false)
     private var settingsOpen by mutableStateOf(false)
     private var homeOpen by mutableStateOf(true)
@@ -1550,6 +1613,7 @@ class MainActivity : ComponentActivity() {
             homeOpen -> HomeScreen()
             menuOpen -> MainMenuScreen()
             mediaHubOpen -> MediaHubScreen()
+            malayalamRadioOpen -> MalayalamRadioScreen()
             telegramLoginOpen -> TelegramLoginScreen()
             browserOpen -> {
                 Box(modifier = Modifier.fillMaxSize()) {
@@ -2578,6 +2642,179 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
+    private fun MalayalamRadioScreen() {
+        val context = LocalContext.current
+        val ui = rememberUiMetrics()
+        var selectedStation by remember { mutableStateOf<MalayalamRadioStation?>(null) }
+        var streamIndex by remember { mutableStateOf(0) }
+        var isPlaying by remember { mutableStateOf(false) }
+        var radioError by remember { mutableStateOf("") }
+        val player = remember(context) {
+            ExoPlayer.Builder(context).build().apply {
+                setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                        .setUsage(C.USAGE_MEDIA)
+                        .build(),
+                    true
+                )
+            }
+        }
+
+        fun startStation(station: MalayalamRadioStation) {
+            val sameStation = selectedStation?.name == station.name
+            if (sameStation && player.isPlaying) {
+                player.pause()
+                isPlaying = false
+                return
+            }
+            if (sameStation && player.playbackState != Player.STATE_IDLE) {
+                player.play()
+                isPlaying = true
+                radioError = ""
+                return
+            }
+            selectedStation = station
+            streamIndex = 0
+            radioError = ""
+            player.setMediaItem(buildMalayalamRadioMediaItem(station, streamIndex))
+            player.prepare()
+            player.play()
+            isPlaying = true
+        }
+
+        DisposableEffect(player) {
+            val listener = object : Player.Listener {
+                override fun onIsPlayingChanged(playing: Boolean) {
+                    isPlaying = playing
+                }
+
+                override fun onPlayerError(error: PlaybackException) {
+                    val station = selectedStation
+                    if (station != null && streamIndex + 1 < station.streamUrls.size) {
+                        streamIndex += 1
+                        player.setMediaItem(buildMalayalamRadioMediaItem(station, streamIndex))
+                        player.prepare()
+                        player.play()
+                        radioError = ""
+                    } else {
+                        isPlaying = false
+                        radioError = "${station?.name ?: "Radio"} stream ഇപ്പോൾ ലഭ്യമല്ല. മറ്റൊരു station തിരഞ്ഞെടുക്കൂ."
+                    }
+                }
+            }
+            player.addListener(listener)
+            onDispose {
+                player.removeListener(listener)
+                player.release()
+            }
+        }
+
+        BackHandler {
+            player.stop()
+            malayalamRadioOpen = false
+            mediaHubOpen = true
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(ui.screenPadding)
+        ) {
+            AdaptiveLogo(Modifier.align(Alignment.CenterHorizontally))
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column {
+                    Text("Malayalam Radio", style = MaterialTheme.typography.headlineMedium)
+                    Text("Malayalam FM radio stations online", color = Color(0xFFB9C2D0))
+                }
+                TextButton(onClick = {
+                    player.stop()
+                    malayalamRadioOpen = false
+                    mediaHubOpen = true
+                }) {
+                    Text("Back")
+                }
+            }
+
+            Spacer(modifier = Modifier.height(18.dp))
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(ui.cardPadding)) {
+                    Text(
+                        if (selectedStation == null) "ഒരു station തിരഞ്ഞെടുക്കൂ"
+                        else "Now playing: ${selectedStation!!.name}",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        if (isPlaying) "● LIVE"
+                        else "Play ബട്ടൺ അമർത്തി കേൾക്കാം",
+                        color = if (isPlaying) Color(0xFF55E39B) else Color(0xFFB9C2D0)
+                    )
+                    if (radioError.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(radioError, color = Color(0xFFFF6B84))
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+            malayalamRadioStations.forEach { station ->
+                MalayalamRadioStationCard(
+                    station = station,
+                    isCurrent = selectedStation?.name == station.name,
+                    isPlaying = isPlaying,
+                    onPlayPause = { startStation(station) }
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+            }
+        }
+    }
+
+    @Composable
+    private fun MalayalamRadioStationCard(
+        station: MalayalamRadioStation,
+        isCurrent: Boolean,
+        isPlaying: Boolean,
+        onPlayPause: () -> Unit
+    ) {
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                AsyncImage(
+                    model = station.imageUrl,
+                    contentDescription = station.name,
+                    placeholder = painterResource(id = R.drawable.ktele_player_logo),
+                    error = painterResource(id = R.drawable.ktele_player_logo),
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(width = 112.dp, height = 78.dp)
+                        .background(Color(0xFF20242D), RoundedCornerShape(10.dp))
+                )
+                Spacer(modifier = Modifier.size(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(station.name, style = MaterialTheme.typography.titleMedium)
+                    Text(station.frequency, color = Color(0xFFB9C2D0))
+                    if (isCurrent && isPlaying) {
+                        Text("Playing now", color = Color(0xFF55E39B), style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                Button(onClick = onPlayPause) {
+                    Text(if (isCurrent && isPlaying) "Pause" else "Play")
+                }
+            }
+        }
+    }
+
+    @Composable
     private fun SettingsScreen() {
         val context = LocalContext.current
         val ui = rememberUiMetrics()
@@ -3152,12 +3389,13 @@ class MainActivity : ComponentActivity() {
                     Text("Malayalam Radio", style = MaterialTheme.typography.titleLarge)
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        "Listen to Malayalam radio stations.",
+                        "പേര്, ചിത്രം, Play/Pause ബട്ടൺ എന്നിവയോടെ മലയാളം റേഡിയോ കേൾക്കാം.",
                         color = Color(0xFFB9C2D0)
                     )
                     Spacer(modifier = Modifier.height(14.dp))
                     Button(onClick = {
-                        openInAppBrowser(MALAYALAM_RADIO_URL, radioOnly = true)
+                        mediaHubOpen = false
+                        malayalamRadioOpen = true
                     }) {
                         Text("Open Malayalam Radio")
                     }
