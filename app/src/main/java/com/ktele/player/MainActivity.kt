@@ -2500,17 +2500,13 @@ class MainActivity : ComponentActivity() {
         val context = LocalContext.current
         val activity = context as? Activity
         var playerError by remember(channel.streamUrl) { mutableStateOf("") }
-        var isPlaying by remember(channel.streamUrl) { mutableStateOf(false) }
+        var controlsVisible by remember(channel.streamUrl) { mutableStateOf(true) }
         var fillVideo by remember(channel.streamUrl) { mutableStateOf(true) }
         val player = remember(channel.streamUrl) {
             ExoPlayer.Builder(context).build().apply {
                 setMediaItem(MediaItem.fromUri(channel.streamUrl))
                 playWhenReady = true
                 addListener(object : Player.Listener {
-                    override fun onIsPlayingChanged(playing: Boolean) {
-                        isPlaying = playing
-                    }
-
                     override fun onPlayerError(error: PlaybackException) {
                         playerError = "Playback error: " + error.errorCodeName
                     }
@@ -2579,6 +2575,15 @@ class MainActivity : ComponentActivity() {
                         useController = true
                         controllerAutoShow = true
                         controllerHideOnTouch = true
+                        controllerShowTimeoutMs = 4000
+                        setControllerVisibilityListener(
+                            object : PlayerView.ControllerVisibilityListener {
+                                override fun onVisibilityChanged(visibility: Int) {
+                                    controlsVisible = visibility == View.VISIBLE
+                                }
+                            }
+                        )
+                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                         resizeMode = if (fillVideo) {
                             AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                         } else {
@@ -2599,7 +2604,7 @@ class MainActivity : ComponentActivity() {
 
             // Keep this out of the way during playback. Pause the channel to
             // switch between a cropped full-screen picture and the full frame.
-            if (!isPlaying) {
+            if (controlsVisible) {
                 Button(
                     onClick = { fillVideo = !fillVideo },
                     modifier = Modifier
