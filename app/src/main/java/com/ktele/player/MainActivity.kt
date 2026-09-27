@@ -384,31 +384,18 @@ private fun searchMusicSongs(
         val payload = requestJson(searchTerm) ?: continue
         val data = payload.optJSONObject("data") ?: continue
 
-        val resultCategories = listOf(
-            "songs" to "song",
-            "albums" to "album",
-            "playlists" to "playlist",
-            "artists" to "artist"
-        )
-        for ((category, resultType) in resultCategories) {
-            val results = data.optJSONObject(category)?.optJSONArray("results") ?: continue
+        listOf("songs" to "song", "albums" to "album").forEach { (category, resultType) ->
+            val results = data.optJSONObject(category)?.optJSONArray("results") ?: return@forEach
             for (index in 0 until results.length()) {
                 val result = results.optJSONObject(index) ?: continue
                 val resultLanguage = result.optString("language").trim().lowercase()
-                if (detectedLanguage != null && resultLanguage.isNotBlank() && resultLanguage != detectedLanguage) continue
+                if (detectedLanguage != null && resultLanguage != detectedLanguage) continue
 
-                val titleCandidates = if (resultType == "artist") {
-                    listOf(result.optString("name"), result.optString("title"))
-                } else {
-                    listOf(result.optString("title"), result.optString("name"), result.optString("album"))
-                }
-                val title = titleCandidates
-                    .map { it.trim() }
-                    .firstOrNull { it.isNotBlank() }
-                    ?: continue
+                val title = result.optString("title").trim()
+                if (title.isBlank()) continue
 
                 val artists = result.optJSONObject("artists")?.optJSONArray("primary")
-                val primaryArtists = buildList {
+                val artist = buildList {
                     if (artists != null) {
                         for (artistIndex in 0 until artists.length()) {
                             artists.optJSONObject(artistIndex)?.optString("name")
@@ -417,14 +404,10 @@ private fun searchMusicSongs(
                                 ?.let(::add)
                         }
                     }
-                }
-                val artist = primaryArtists.joinToString(", ").ifBlank {
-                    listOf(
-                        result.optString("primaryArtists"),
-                        result.optString("artist"),
-                        result.optJSONObject("owner")?.optString("name").orEmpty(),
-                        if (resultType == "artist") "Artist" else "Unknown artist"
-                    ).map { it.trim() }.firstOrNull { it.isNotBlank() } ?: "Unknown artist"
+                }.joinToString(", ").ifBlank {
+                    result.optString("primaryArtists").trim()
+                        .ifBlank { result.optString("artist").trim() }
+                        .ifBlank { "Unknown artist" }
                 }
 
                 val key = "$resultType\u0000$title\u0000$artist"
@@ -434,12 +417,6 @@ private fun searchMusicSongs(
                     ?.optJSONObject(images.length() - 1)
                     ?.optString("url")
                     ?.takeIf { it.isNotBlank() }
-                    ?: result.optString("image").trim().takeIf { it.startsWith("http") }
-                val description = listOf(
-                    result.optString("description"),
-                    result.optString("subtitle"),
-                    result.optString("type")
-                ).map { it.trim() }.firstOrNull { it.isNotBlank() }
 
                 matches += KUniverseSong(
                     title = title,
@@ -448,9 +425,9 @@ private fun searchMusicSongs(
                     imageUrl = imageUrl,
                     resultType = resultType,
                     language = resultLanguage.ifBlank { detectedLanguage },
-                    description = description
+                    description = result.optString("description").trim().takeIf { it.isNotBlank() }
                 )
-                if (matches.size >= 60) return matches
+                if (matches.size == 50) return matches
             }
         }
         if (matches.isNotEmpty()) break
@@ -4344,7 +4321,7 @@ class MainActivity : ComponentActivity() {
                                                     maxLines = 1
                                                 )
                                            }
-                                           Text(if (song.resultType == "song") "▶" else "•", color = Color(0xFF50E879), fontSize = 18.sp)
+                                           Text("▶", color = Color(0xFF50E879), fontSize = 18.sp)
                                        }
                                    }
                                }
