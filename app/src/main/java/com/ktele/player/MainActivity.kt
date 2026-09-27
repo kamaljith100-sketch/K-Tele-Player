@@ -1238,7 +1238,12 @@ private const val MUSIC_BRANDING_HOOK = """
 (function() {
     if (window.__kteleMusicBrandingInstalled) return;
     window.__kteleMusicBrandingInstalled = true;
-    var brandPattern = /(?:listen\s*free|free\s*listen)(?:\.in)?/ig;
+    var brandPattern = /(?:listen\s*free|listenfree(?:\.in)?|free\s*listen)/ig;
+
+    function renameBrand(value) {
+        brandPattern.lastIndex = 0;
+        return String(value || '').replace(brandPattern, 'K-Universe');
+    }
 
     function replaceBranding(root) {
         if (!root) return;
@@ -1246,20 +1251,19 @@ private const val MUSIC_BRANDING_HOOK = """
         var node;
         while ((node = walker.nextNode())) {
             if (node.parentElement && node.parentElement.closest('#__kteleBrandBadge')) continue;
-            if (brandPattern.test(node.nodeValue || '')) {
-                node.nodeValue = node.nodeValue.replace(brandPattern, 'K Universe');
-            }
-            brandPattern.lastIndex = 0;
+            var renamed = renameBrand(node.nodeValue || '');
+            if (renamed !== node.nodeValue) node.nodeValue = renamed;
         }
-        root.querySelectorAll('img, source').forEach(function(media) {
-            var label = ((media.getAttribute('alt') || '') + ' ' +
-                (media.getAttribute('title') || '') + ' ' +
-                (media.getAttribute('src') || '')).toLowerCase();
-            if (brandPattern.test(label)) {
-                media.style.setProperty('display', 'none', 'important');
-            }
-            brandPattern.lastIndex = 0;
+        root.querySelectorAll('[alt], [title], [aria-label]').forEach(function(element) {
+            ['alt', 'title', 'aria-label'].forEach(function(attribute) {
+                if (element.hasAttribute(attribute)) {
+                    var value = element.getAttribute(attribute);
+                    var renamed = renameBrand(value);
+                    if (renamed !== value) element.setAttribute(attribute, renamed);
+                }
+            });
         });
+        if (document.title) document.title = renameBrand(document.title);
     }
 
     var nonMusicPattern = /(?:product\s+updates|new\s+features\s+released|bugs\s+fixed|tune\s*free|beta\s+version\s+right\s+now|give\s+feedback\s+to\s+improve|open\s+tune\s*free|copy\s+link|join\s+our\s+socials|latest\s+updates|ask\s+any\s+questions|home\s+screen\s+suggestions|select\s+the\s+languages|^let's\s+go$|^login$|^platform$|company\s*&\s*legal|how\s+it\s+works|^features$|^faq$|^blog$|privacy\s+policy|terms\s+of\s+service|cookie\s+policy|^dmca$|^disclaimer$|^about$|^contact$)/i;
@@ -1324,12 +1328,28 @@ private const val MUSIC_BRANDING_HOOK = """
             if (node.closest('#__kteleBrandBadge')) return;
             var text = (node.innerText || node.textContent || '').trim().replace(/\s+/g, ' ');
             if (!text || text.length > 320) return;
-            if (/play music inside k-tele|join our socials|latest updates|^login$|^platform$|company\s*&\s*legal|privacy policy|terms of service|cookie policy|^dmca$|^disclaimer$|^about$|^contact$/i.test(text)) {
+            if (/play music inside k-tele|join our socials|latest updates|stay updated|visit social hub|^login$|^platform$|company\s*&\s*legal|privacy policy|terms of service|cookie policy|^dmca$|^disclaimer$|^about$|^contact$/i.test(text)) {
                 hideMusicChromeTarget(node, 900);
             }
         });
         root.querySelectorAll('footer, [role="contentinfo"]').forEach(function(node) {
             node.style.setProperty('display', 'none', 'important');
+        });
+    }
+
+    function hideListenFreeFooter(root) {
+        if (!root || !root.querySelectorAll) return;
+        root.querySelectorAll('footer, [role="contentinfo"], section, article, div').forEach(function(node) {
+            if (node === document.body || node === document.documentElement || node === document.querySelector('main')) return;
+            var text = (node.innerText || node.textContent || '').trim().replace(/\s+/g, ' ');
+            if (text.length < 120 || text.length > 2400) return;
+            var signals = [
+                /platform/i, /company\s*&\s*legal/i, /stay updated/i,
+                /join our socials/i, /visit social hub/i, /privacy policy/i,
+                /terms of service/i, /cookie policy/i, /\bdmca\b/i, /disclaimer/i
+            ];
+            var matches = signals.filter(function(pattern) { return pattern.test(text); }).length;
+            if (matches >= 2) node.style.setProperty('display', 'none', 'important');
         });
     }
 
@@ -1387,6 +1407,7 @@ private const val MUSIC_BRANDING_HOOK = """
         replaceBranding(document.documentElement);
         hideNonMusicSections(document.documentElement);
         hideMusicChrome(document.documentElement);
+        hideListenFreeFooter(document.documentElement);
         removeBlockingOverlays(document.documentElement);
         addBrandBadge();
     }
