@@ -78,6 +78,7 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.SeekParameters
 import androidx.media3.datasource.BaseDataSource
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
@@ -500,6 +501,9 @@ class TorrentDataSource(
         // TorrentStream exposes a blocking stream. Do not use File.length() as
         // the EOF boundary: during streaming it can describe only the sparse
         // portion already written, while the torrent stream is still growing.
+        // Tell libtorrent which piece is needed before the blocking stream skips.
+        // Without this, seeking starts at byte 0 and waits through the whole file.
+        torrent.setInterestedBytes(dataSpec.position)
         val stream = torrent.getVideoStream()
         var toSkip = dataSpec.position
         while (toSkip > 0L) {
@@ -1532,6 +1536,8 @@ class MainActivity : ComponentActivity() {
                 .setLoadControl(loadControl)
                 .build()
 
+            exo.setSeekParameters(SeekParameters.CLOSEST_SYNC)
+
             exo.setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
@@ -1554,6 +1560,23 @@ class MainActivity : ComponentActivity() {
                                     ?: exception.message
                                     ?: ""
                             )
+                    }
+
+                    override fun onPositionDiscontinuity(
+                        oldPosition: Player.PositionInfo,
+                        newPosition: Player.PositionInfo,
+                        reason: Int
+                    ) {
+                        if (reason != Player.DISCONTINUITY_REASON_SEEK) return
+                        val torrent = item.torrent ?: return
+                        val durationMs = exo.duration
+                        if (durationMs <= 0L || item.size <= 0L) return
+
+                        val targetByte = (
+                            newPosition.positionMs.toDouble() / durationMs.toDouble() *
+                                item.size.toDouble()
+                            ).toLong().coerceIn(0L, item.size - 1L)
+                        torrent.setInterestedBytes(targetByte)
                     }
                 }
             )
