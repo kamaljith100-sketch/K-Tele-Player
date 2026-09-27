@@ -72,7 +72,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.font.FontWeight
@@ -156,6 +158,61 @@ private fun subtitleCaptionStyle(foregroundColor: Int) =
         null
     )
 
+
+private data class UiMetrics(
+    val screenPadding: Dp,
+    val cardPadding: Dp,
+    val controlHeight: Dp,
+    val logoSize: Dp,
+    val mediaButtonHeight: Dp
+)
+
+@Composable
+private fun rememberUiMetrics(): UiMetrics {
+    val context = LocalContext.current
+    val configuration = LocalConfiguration.current
+    val widthDp = configuration.screenWidthDp.coerceAtLeast(320)
+
+    return when {
+        isTelevisionDevice(context) -> UiMetrics(
+            screenPadding = 20.dp,
+            cardPadding = 14.dp,
+            controlHeight = 52.dp,
+            logoSize = 112.dp,
+            mediaButtonHeight = 58.dp
+        )
+        widthDp <= 360 -> UiMetrics(
+            screenPadding = 12.dp,
+            cardPadding = 12.dp,
+            controlHeight = 48.dp,
+            logoSize = 82.dp,
+            mediaButtonHeight = 52.dp
+        )
+        widthDp <= 600 -> UiMetrics(
+            screenPadding = 16.dp,
+            cardPadding = 14.dp,
+            controlHeight = 50.dp,
+            logoSize = 96.dp,
+            mediaButtonHeight = 56.dp
+        )
+        else -> UiMetrics(
+            screenPadding = 24.dp,
+            cardPadding = 18.dp,
+            controlHeight = 54.dp,
+            logoSize = 112.dp,
+            mediaButtonHeight = 60.dp
+        )
+    }
+}
+
+@Composable
+private fun AdaptiveLogo(
+    modifier: Modifier = Modifier,
+    sizeOverride: Dp? = null
+) {
+    val ui = rememberUiMetrics()
+    AppLogo(modifier.size(sizeOverride ?: ui.logoSize))
+}
 
 private val kTeleColorScheme = darkColorScheme(
     primary = Color(0xFF13CFF0),
@@ -764,12 +821,14 @@ private fun MediaPlayButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val ui = rememberUiMetrics()
+
     Button(
         onClick = onClick,
         modifier = modifier
             .fillMaxWidth()
-            .height(68.dp),
-        shape = RoundedCornerShape(34.dp),
+            .height(ui.mediaButtonHeight),
+        shape = RoundedCornerShape(ui.mediaButtonHeight / 2f),
         colors = ButtonDefaults.buttonColors(
             containerColor = Color(0xFF13CFF0),
             contentColor = Color(0xFF001117)
@@ -2062,6 +2121,7 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun CatalogScreen() {
+        val ui = rememberUiMetrics()
         val selected = selectedCatalogMovie
         if (selected != null) {
             CatalogDetailScreen(selected)
@@ -2080,14 +2140,14 @@ class MainActivity : ComponentActivity() {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(20.dp)
+                .padding(ui.screenPadding)
         ) {
             Image(
                 painter = painterResource(id = R.drawable.ktele_player_logo),
                 contentDescription = "K- Univese logo",
                 contentScale = ContentScale.Fit,
                 modifier = Modifier
-                    .size(104.dp)
+                    .size(ui.logoSize)
                     .align(Alignment.CenterHorizontally)
             )
 
@@ -2132,7 +2192,7 @@ class MainActivity : ComponentActivity() {
 
             if (visibleMovies.isEmpty()) {
                 Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(20.dp)) {
+                    Column(modifier = Modifier.padding(ui.cardPadding)) {
                         Text("No licensed titles yet", style = MaterialTheme.typography.titleMedium)
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
@@ -2215,7 +2275,7 @@ class MainActivity : ComponentActivity() {
                 .fillMaxSize()
                 .padding(20.dp)
         ) {
-            AppLogo(Modifier.align(Alignment.CenterHorizontally))
+            AdaptiveLogo(Modifier.align(Alignment.CenterHorizontally))
             Spacer(modifier = Modifier.height(12.dp))
             TextButton(onClick = { selectedCatalogMovie = null }) {
                 Text("Back to catalog")
@@ -2305,6 +2365,7 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun IptvScreen() {
         val context = LocalContext.current
+        val ui = rememberUiMetrics()
         val favoritePreferences = remember(context) {
             context.getSharedPreferences("iptv_favorites", Context.MODE_PRIVATE)
         }
@@ -2358,9 +2419,9 @@ class MainActivity : ComponentActivity() {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(24.dp)
+                .padding(ui.screenPadding)
         ) {
-            AppLogo(Modifier.align(Alignment.CenterHorizontally))
+            AdaptiveLogo(Modifier.align(Alignment.CenterHorizontally))
             Spacer(modifier = Modifier.height(12.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -2420,7 +2481,7 @@ class MainActivity : ComponentActivity() {
                 }
             } else if (matchingChannels.isEmpty()) {
                 Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(20.dp)) {
+                    Column(modifier = Modifier.padding(ui.cardPadding)) {
                         Text(
                             if (searchQuery.trim().isEmpty()) {
                                 "No channels loaded"
@@ -2499,6 +2560,7 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun SettingsScreen() {
         val context = LocalContext.current
+        val ui = rememberUiMetrics()
         val preferences = remember(context) {
             context.getSharedPreferences("iptv_favorites", Context.MODE_PRIVATE)
         }
@@ -2510,9 +2572,10 @@ class MainActivity : ComponentActivity() {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(24.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(ui.screenPadding)
         ) {
-            AppLogo(Modifier.align(Alignment.CenterHorizontally))
+            AdaptiveLogo(Modifier.align(Alignment.CenterHorizontally))
             Spacer(modifier = Modifier.height(12.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -2528,7 +2591,7 @@ class MainActivity : ComponentActivity() {
             Spacer(modifier = Modifier.height(20.dp))
 
             Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(18.dp)) {
+                Column(modifier = Modifier.padding(ui.cardPadding)) {
                     Text("IPTV playlist", style = MaterialTheme.typography.titleLarge)
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
@@ -2802,6 +2865,7 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun MainMenuScreen() {
         val context = LocalContext.current
+        val ui = rememberUiMetrics()
         val firstFocusRequester = remember { FocusRequester() }
 
         LaunchedEffect(Unit) {
@@ -2819,11 +2883,12 @@ class MainActivity : ComponentActivity() {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(24.dp),
+                .verticalScroll(rememberScrollState())
+                .padding(ui.screenPadding),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.Start
         ) {
-            AppLogo(Modifier.align(Alignment.CenterHorizontally))
+            AdaptiveLogo(Modifier.align(Alignment.CenterHorizontally))
             Spacer(modifier = Modifier.height(20.dp))
 
             MediaPlayButton(
@@ -2857,6 +2922,7 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun TelegramLoginScreen() {
+        val ui = rememberUiMetrics()
         var input by remember { mutableStateOf("") }
 
         BackHandler {
@@ -2874,7 +2940,11 @@ class MainActivity : ComponentActivity() {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(24.dp),
+                .then(
+                    if (stage == "ready") Modifier
+                    else Modifier.verticalScroll(rememberScrollState())
+                )
+                .padding(ui.screenPadding),
             verticalArrangement = Arrangement.Center
         ) {
             Image(
@@ -2882,7 +2952,7 @@ class MainActivity : ComponentActivity() {
                 contentDescription = "K- Univese logo",
                 contentScale = ContentScale.Fit,
                 modifier = Modifier
-                    .size(176.dp)
+                    .size(ui.logoSize)
                     .align(Alignment.CenterHorizontally)
             )
 
@@ -2944,6 +3014,8 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun MediaHubScreen() {
+        val ui = rememberUiMetrics()
+
         BackHandler {
             mediaHubOpen = false
             menuOpen = true
@@ -2953,10 +3025,10 @@ class MainActivity : ComponentActivity() {
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(24.dp),
+                .padding(ui.screenPadding),
             verticalArrangement = Arrangement.Top
         ) {
-            AppLogo(Modifier.align(Alignment.CenterHorizontally))
+            AdaptiveLogo(Modifier.align(Alignment.CenterHorizontally))
             Spacer(modifier = Modifier.height(12.dp))
 
             Row(
@@ -2988,7 +3060,7 @@ class MainActivity : ComponentActivity() {
             Spacer(modifier = Modifier.height(24.dp))
 
             Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(20.dp)) {
+                Column(modifier = Modifier.padding(ui.cardPadding)) {
                     Text("IPTV", style = MaterialTheme.typography.titleLarge)
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
@@ -3010,7 +3082,7 @@ class MainActivity : ComponentActivity() {
             Spacer(modifier = Modifier.height(16.dp))
 
             Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(20.dp)) {
+                Column(modifier = Modifier.padding(ui.cardPadding)) {
                     Text("Movies", style = MaterialTheme.typography.titleLarge)
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
@@ -3039,7 +3111,7 @@ class MainActivity : ComponentActivity() {
             Spacer(modifier = Modifier.height(16.dp))
 
             Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(20.dp)) {
+                Column(modifier = Modifier.padding(ui.cardPadding)) {
                     Text("Music", style = MaterialTheme.typography.titleLarge)
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
@@ -3056,7 +3128,7 @@ class MainActivity : ComponentActivity() {
             Spacer(modifier = Modifier.height(16.dp))
 
             Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(20.dp)) {
+                Column(modifier = Modifier.padding(ui.cardPadding)) {
                     Text("Malayalam Radio", style = MaterialTheme.typography.titleLarge)
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
@@ -3075,7 +3147,7 @@ class MainActivity : ComponentActivity() {
             Spacer(modifier = Modifier.height(16.dp))
 
             Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(20.dp)) {
+                Column(modifier = Modifier.padding(ui.cardPadding)) {
                     Text("Telegram Videos", style = MaterialTheme.typography.titleLarge)
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
@@ -3097,7 +3169,7 @@ class MainActivity : ComponentActivity() {
             Spacer(modifier = Modifier.height(16.dp))
 
             Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(20.dp)) {
+                Column(modifier = Modifier.padding(ui.cardPadding)) {
                     Text("Torrent Video Browser", style = MaterialTheme.typography.titleLarge)
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
@@ -3362,7 +3434,7 @@ class MainActivity : ComponentActivity() {
                     .fillMaxSize()
                     .padding(8.dp)
             ) {
-                AppLogo(Modifier.size(54.dp))
+                AdaptiveLogo(sizeOverride = 54.dp)
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -3515,6 +3587,7 @@ class MainActivity : ComponentActivity() {
 
     @Composable
         private fun ListScreen() {
+            val ui = rememberUiMetrics()
             var input by remember {
                 mutableStateOf("")
             }
@@ -3526,7 +3599,7 @@ class MainActivity : ComponentActivity() {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(24.dp),
+                    .padding(ui.screenPadding),
                 verticalArrangement = if (stage == "ready") {
                     Arrangement.Top
                 } else {
@@ -3535,7 +3608,7 @@ class MainActivity : ComponentActivity() {
             ) {
                 AppLogo(
                     Modifier
-                        .size(176.dp)
+                        .size(ui.logoSize)
                         .align(Alignment.CenterHorizontally)
                 )
 
