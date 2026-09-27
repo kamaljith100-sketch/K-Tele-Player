@@ -103,7 +103,7 @@ import com.github.se_bastiaan.torrentstream.listeners.TorrentListener
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.IOException
-import java.io.InputStream
+import java.io.RandomAccessFile
 import java.net.URL
 import java.net.URLDecoder
 import java.util.concurrent.CountDownLatch
@@ -489,7 +489,7 @@ class TorrentDataSource(
 ) : BaseDataSource(true) {
 
     private var currentUri: Uri? = null
-    private var input: InputStream? = null
+    private var input: RandomAccessFile? = null
     private var position = 0L
     private var endPosition = Long.MAX_VALUE
     private var opened = false
@@ -498,57 +498,69 @@ class TorrentDataSource(
         currentUri = dataSpec.uri
         transferInitializing(dataSpec)
 
-        // TorrentStream exposes a blocking stream. Do not use File.length() as
-        // the EOF boundary: during streaming it can describe only the sparse
-        // portion already written, while the torrent stream is still growing.
-        // Tell libtorrent which piece is needed before the blocking stream skips.
-        // Without this, seeking starts at byte 0 and waits through the whole file.
-        torrent.setInterestedBytes(dataSpec.position)
-        val stream = torrent.getVideoStream()
-        var toSkip = dataSpec.position
-        while (toSkip > 0L) {
-            val skipped = stream.skip(toSkip)
-            if (skipped > 0L) {
-                toSkip -= skipped
-            } else if (stream.read() == -1) {
-                throw IOException("Could not seek in torrent video")
-            } else {
-                toSkip--
-            }
+        val startPosition = dataSpec.position.coerceAtLeast(0L)
+        val videoFile = torrent.videoFile
+        if (!videoFile.exists() || !videoFile.isFile) {
+            throw IOException("Torrent video file is not available")
         }
 
-        input = stream
-        position = dataSpec.position
+        // Prioritize the target piece before ExoPlayer starts reading. RandomAccessFile
+        // avoids walking through every preceding byte after a seek.
+        torrent.setInterestedBytes(startPosition)
+        val randomAccessFile = RandomAccessFile(videoFile, "r")
+        randomAccessFile.seek(startPosition)
+        input = randomAccessFile
+        position = startPosition
         endPosition = if (dataSpec.length != C.LENGTH_UNSET.toLong()) {
-            dataSpec.position + dataSpec.length
+            startPosition + dataSpec.length
         } else {
             Long.MAX_VALUE
         }
         opened = true
         transferStarted(dataSpec)
 
-        if (dataSpec.length != C.LENGTH_UNSET.toLong()) {
-            return dataSpec.length
-        }
-
-        // Report the best known length when available, but let read() decide
-        // EOF so a stale/incomplete File.length() cannot stop playback.
-        val currentLength = maxOf(knownFileSize, torrent.videoFile.length())
-        return if (currentLength > dataSpec.position) {
-            currentLength - dataSpec.position
+        return if (dataSpec.length != C.LENGTH_UNSET.toLong()) {
+            dataSpec.length
         } else {
-            C.LENGTH_UNSET.toLong()
+            val currentLength = maxOf(knownFileSize, videoFile.length())
+            if (currentLength > startPosition) {
+                currentLength - startPosition
+            } else {
+                C.LENGTH_UNSET.toLong()
+            }
         }
+    }
+
+    private fun waitForPieces(start: Long, length: Int): Boolean {
+        val pieceLength = torrent.getTorrentHandle().torrentFile().pieceLength().toLong()
+        if (pieceLength <= 0L) return true
+
+        var pieceOffset = (start / pieceLength) * pieceLength
+        val end = start + length.toLong()
+        while (pieceOffset < end) {
+            while (!torrent.hasBytes(pieceOffset)) {
+                try {
+                    Thread.sleep(50L)
+                } catch (e: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    return false
+                }
+            }
+            pieceOffset += pieceLength
+        }
+        return true
     }
 
     override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
         if (length == 0) return 0
-        val stream = input ?: throw IOException("Torrent stream is not open")
+        val randomAccessFile = input ?: throw IOException("Torrent stream is not open")
         if (position >= endPosition) return C.RESULT_END_OF_INPUT
 
         val allowed = minOf(length.toLong(), endPosition - position).toInt()
-        val count = stream.read(buffer, offset, allowed)
-        if (count == -1) return C.RESULT_END_OF_INPUT
+        if (!waitForPieces(position, allowed)) return C.RESULT_END_OF_INPUT
+
+        val count = randomAccessFile.read(buffer, offset, allowed)
+        if (count <= 0) return C.RESULT_END_OF_INPUT
 
         position += count
         bytesTransferred(count)
@@ -567,7 +579,6 @@ class TorrentDataSource(
         }
     }
 }
-
 private const val TORRENT_LINK_HOOK = """
 (function() {
     if (window.__kteleTorrentHook) return;
@@ -814,7 +825,7 @@ class MainActivity : ComponentActivity() {
                 .removeFilesAfterStop(false)
                 .maxConnections(500)
                 .maxActiveDHT(200)
-                .prepareSize(1L * 1024L * 1024L)
+                .prepareSize(2L * 1024L * 1024L)
                 .build()
 
             torrentStream = TorrentStream.init(options).also { stream ->
