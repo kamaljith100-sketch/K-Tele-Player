@@ -18,6 +18,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.webkit.WebSettings
 
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -253,24 +254,43 @@ private val catalogCategories = listOf(
 private const val MALAYALAM_RADIO_URL = "https://radiosindia.com/malayalamradio.html"
 
 private val MALAYALAM_RADIO_STREAM_EXTENSIONS = listOf(
-    ".mp3", ".aac", ".m3u8", ".pls", ".ogg", ".wav", ".flac"
+    ".mp3", ".aac", ".m3u8", ".m3u", ".pls", ".ogg", ".wav", ".flac"
+)
+
+private val MALAYALAM_RADIO_STREAM_MARKERS = listOf(
+    "stream", "radio", "live", "listen", "audio", "icecast", "shoutcast", "playlist"
 )
 
 private fun isMalayalamRadioPageUrl(rawUrl: String): Boolean {
     val uri = runCatching { Uri.parse(rawUrl) }.getOrNull() ?: return false
     val host = uri.host?.lowercase() ?: return false
-    return (uri.scheme.equals("http", ignoreCase = true) ||
-        uri.scheme.equals("https", ignoreCase = true)) &&
-        (host == "radiosindia.com" || host == "www.radiosindia.com") &&
-        uri.path?.trimEnd('/') == "/malayalamradio.html"
+    if (!uri.scheme.equals("http", ignoreCase = true) &&
+        !uri.scheme.equals("https", ignoreCase = true)
+    ) return false
+    if (host != "radiosindia.com" && host != "www.radiosindia.com") return false
+
+    val path = uri.path?.trimEnd('/').orEmpty()
+    return path.isEmpty() || path == "/" ||
+        path.endsWith(".html", ignoreCase = true) ||
+        path.endsWith(".php", ignoreCase = true)
 }
 
 private fun isMalayalamRadioStreamUrl(rawUrl: String): Boolean {
     val uri = runCatching { Uri.parse(rawUrl) }.getOrNull() ?: return false
     if (!uri.scheme.equals("http", ignoreCase = true) &&
-        !uri.scheme.equals("https", ignoreCase = true)) return false
+        !uri.scheme.equals("https", ignoreCase = true)
+    ) return false
+
+    val lowerUrl = rawUrl.lowercase()
     val path = uri.path?.lowercase().orEmpty()
-    return MALAYALAM_RADIO_STREAM_EXTENSIONS.any { path.endsWith(it) }
+    val hasAudioExtension = MALAYALAM_RADIO_STREAM_EXTENSIONS.any { path.endsWith(it) }
+    val hasStreamMarker = MALAYALAM_RADIO_STREAM_MARKERS.any { marker ->
+        uri.host?.lowercase()?.contains(marker) == true ||
+            path.contains(marker) ||
+            lowerUrl.contains("$marker=") ||
+            lowerUrl.contains("$marker?")
+    }
+    return hasAudioExtension || hasStreamMarker
 }
 
 private fun isAllowedMalayalamRadioUrl(rawUrl: String): Boolean =
@@ -3484,6 +3504,9 @@ class MainActivity : ComponentActivity() {
                         settings.loadWithOverviewMode = true
                         settings.useWideViewPort = true
                         settings.mediaPlaybackRequiresUserGesture = false
+                        settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+                        settings.allowContentAccess = true
+                        settings.allowFileAccess = true
                         webChromeClient = WebChromeClient()
                         addJavascriptInterface(object {
                             @JavascriptInterface
@@ -3570,6 +3593,9 @@ class MainActivity : ComponentActivity() {
                                 urlText = url
                                 view.evaluateJavascript(TORRENT_LINK_HOOK, null)
                                 view.evaluateJavascript(AD_CLEANUP_HOOK, null)
+                                if (radioOnlyMode) {
+                                    view.evaluateJavascript("document.querySelectorAll('audio,video').forEach(function(media){ media.autoplay = true; });", null)
+                                }
                             }
                         }
                         loadUrl(browserStartUrl)
