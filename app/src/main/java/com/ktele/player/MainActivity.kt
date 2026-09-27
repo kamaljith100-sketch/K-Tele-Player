@@ -246,17 +246,83 @@ private val kTeleColorScheme = darkColorScheme(
 
 private data class KUniverseSong(
     val title: String,
-    val artist: String
+    val artist: String,
+    val searchQuery: String = title,
+    val streamUrl: String? = null,
+    val durationSeconds: Int = 0,
+    val imageUrl: String? = null
 )
 
 private val kUniverseSongs = listOf(
-    KUniverseSong("All Yi Ali", "Ali Gelich"),
+    KUniverseSong("All Yi Ali", "Ali Gelich", "Ya Ali"),
     KUniverseSong("Salam Hussain", "Nadeem Sarwar"),
     KUniverseSong("Sara Zamana Mary Hussain Ka Hai", "Farhan Ali Waris"),
     KUniverseSong("Janum Ali Ali", "Nadeem Sarwar"),
     KUniverseSong("Salam Ghazi Salam Ghazi", "Nadeem Sarwar"),
     KUniverseSong("Abbas Ka Saha Hai", "Naat Collection")
 )
+
+private data class ResolvedMusicTrack(
+    val streamUrl: String,
+    val durationSeconds: Int,
+    val imageUrl: String?
+)
+
+private const val MUSIC_API_BASE_URL = "https://music-api.albatross0071.workers.dev/api"
+
+private fun resolveMusicTrack(song: KUniverseSong): ResolvedMusicTrack? {
+    fun requestJson(url: String): JSONObject? {
+        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 12_000
+            readTimeout = 12_000
+            setRequestProperty("Accept", "application/json")
+            setRequestProperty("User-Agent", "K-Tele-Player/1.0")
+        }
+        return try {
+            if (connection.responseCode !in 200..299) return null
+            JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+        } catch (_: Exception) {
+            null
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    val query = Uri.encode(song.searchQuery + " " + song.artist)
+    val searchJson = requestJson(MUSIC_API_BASE_URL + "/search?query=" + query) ?: return null
+    val results = searchJson.optJSONObject("data")?.optJSONObject("songs")?.optJSONArray("results") ?: return null
+    if (results.length() == 0) return null
+    var match = results.optJSONObject(0) ?: return null
+    for (index in 0 until results.length()) {
+        val candidate = results.optJSONObject(index) ?: continue
+        val candidateTitle = candidate.optString("title")
+        if (candidateTitle.equals(song.searchQuery, ignoreCase = true) || candidateTitle.contains(song.searchQuery, ignoreCase = true)) {
+            match = candidate
+            break
+        }
+    }
+    val songId = match.optString("id").takeIf { it.isNotBlank() } ?: return null
+    val detailJson = requestJson(MUSIC_API_BASE_URL + "/songs/" + Uri.encode(songId)) ?: return null
+    val track = detailJson.optJSONArray("data")?.optJSONObject(0) ?: return null
+    val downloads = track.optJSONArray("downloadUrl") ?: return null
+    var streamUrl = ""
+    for (index in 0 until downloads.length()) {
+        val download = downloads.optJSONObject(index) ?: continue
+        val url = download.optString("url")
+        if (url.isNotBlank()) streamUrl = url
+        if (download.optString("quality") == "160kbps" && url.isNotBlank()) break
+    }
+    if (streamUrl.isBlank()) return null
+    val images = track.optJSONArray("image")
+    val imageUrl = images?.optJSONObject(images.length() - 1)?.optString("url")?.takeIf { it.isNotBlank() }
+    return ResolvedMusicTrack(streamUrl, track.optInt("duration", 0), imageUrl)
+}
+
+private fun formatMusicTime(milliseconds: Long): String {
+    val totalSeconds = (milliseconds / 1000L).coerceAtLeast(0L)
+    return "%d:%02d".format(totalSeconds / 60L, totalSeconds % 60L)
+}
 
 private const val MALAYALAM_RADIO_URL = "https://radiosindia.com/malayalamradio.html"
 private const val MUSIC_SITE_URL = "https://listenfree.in/"
@@ -3456,11 +3522,51 @@ class MainActivity : ComponentActivity() {
           var musicMode by remember { mutableStateOf("library") }
           var selectedSong by remember { mutableStateOf(kUniverseSongs[3]) }
           var isPlaying by remember { mutableStateOf(false) }
+          var isLoadingSong by remember { mutableStateOf(false) }
+          var playbackError by remember { mutableStateOf<String?>(null) }
+          var playbackPositionMs by remember { mutableStateOf(0L) }
+          var playbackDurationMs by remember { mutableStateOf(0L) }
           var lyricsVisible by remember { mutableStateOf(false) }
           var lyricsLoading by remember { mutableStateOf(false) }
           var lyricsText by remember { mutableStateOf<String?>(null) }
           var searchQuery by remember { mutableStateOf("") }
           var musicWebView by remember { mutableStateOf<WebView?>(null) }
+          val musicContext = LocalContext.current
+          val musicScope = rememberCoroutineScope()
+          val musicPlayer = remember(musicContext) { ExoPlayer.Builder(musicContext).build() }
+
+          DisposableEffect(musicPlayer) {
+              val listener = object : Player.Listener {
+                  override fun onIsPlayingChanged(playing: Boolean) { isPlaying = playing }
+                  override fun onPlaybackStateChanged(state: Int) {
+                      if (state == Player.STATE_READY) {
+                          isLoadingSong = false
+                          playbackDurationMs = musicPlayer.duration.coerceAtLeast(0L)
+                      } else if (state == Player.STATE_ENDED) {
+                          isPlaying = false
+                          playbackPositionMs = 0L
+                      }
+                  }
+                  override fun onPlayerError(error: PlaybackException) {
+                      isLoadingSong = false
+                      isPlaying = false
+                      playbackError = "This song could not be played right now."
+                  }
+              }
+              musicPlayer.addListener(listener)
+              onDispose {
+                  musicPlayer.removeListener(listener)
+                  musicPlayer.release()
+              }
+          }
+
+          LaunchedEffect(musicPlayer) {
+              while (true) {
+                  playbackPositionMs = musicPlayer.currentPosition.coerceAtLeast(0L)
+                  if (musicPlayer.duration > 0L) playbackDurationMs = musicPlayer.duration
+                  delay(500)
+              }
+          }
 
           fun closeMusicBrowser() {
               musicWebView?.stopLoading()
@@ -3472,8 +3578,38 @@ class MainActivity : ComponentActivity() {
 
           fun openSong(song: KUniverseSong) {
               selectedSong = song
-              isPlaying = true
               musicMode = "now"
+              isLoadingSong = true
+              playbackError = null
+              musicScope.launch {
+                  val resolved = withContext(Dispatchers.IO) { resolveMusicTrack(song) }
+                  if (resolved == null) {
+                      isLoadingSong = false
+                      isPlaying = false
+                      playbackError = "Audio is not available for this song right now."
+                      return@launch
+                  }
+                  selectedSong = song.copy(streamUrl = resolved.streamUrl, durationSeconds = resolved.durationSeconds, imageUrl = resolved.imageUrl)
+                  musicPlayer.setMediaItem(MediaItem.fromUri(resolved.streamUrl))
+                  musicPlayer.prepare()
+                  musicPlayer.playWhenReady = true
+              }
+          }
+
+          fun togglePlayback() {
+              if (isLoadingSong) return
+              if (musicPlayer.mediaItemCount == 0) openSong(selectedSong)
+              else if (musicPlayer.playbackState == Player.STATE_ENDED) {
+                  musicPlayer.seekTo(0L)
+                  musicPlayer.play()
+              } else if (musicPlayer.isPlaying) musicPlayer.pause() else musicPlayer.play()
+          }
+
+          fun playAdjacentSong(offset: Int) {
+              val currentIndex = kUniverseSongs.indexOfFirst { it.title == selectedSong.title }
+              val baseIndex = if (currentIndex >= 0) currentIndex else 0
+              val nextIndex = (baseIndex + offset + kUniverseSongs.size) % kUniverseSongs.size
+              openSong(kUniverseSongs[nextIndex])
           }
 
           BackHandler {
@@ -3529,6 +3665,9 @@ class MainActivity : ComponentActivity() {
 
           when (musicMode) {
               "now" -> {
+                  val progressFraction = if (playbackDurationMs > 0L) {
+                      (playbackPositionMs.toFloat() / playbackDurationMs.toFloat()).coerceIn(0f, 1f)
+                  } else 0f
                   Column(modifier = Modifier.fillMaxSize().background(Color(0xFF0B2818))) {
                       Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                           TextButton(onClick = { musicMode = "library" }) { Text("‹", color = Color.White, fontSize = 32.sp) }
@@ -3537,7 +3676,9 @@ class MainActivity : ComponentActivity() {
                       }
                       Column(modifier = Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                           Spacer(modifier = Modifier.height(18.dp))
-                          AppLogo(modifier = Modifier.size(if (LocalConfiguration.current.screenWidthDp < 500) 210.dp else 280.dp))
+                  selectedSong.imageUrl?.let { imageUrl ->
+                      AsyncImage(model = imageUrl, contentDescription = selectedSong.title, contentScale = ContentScale.Crop, modifier = Modifier.size(if (LocalConfiguration.current.screenWidthDp < 500) 210.dp else 280.dp))
+                  } ?: AppLogo(modifier = Modifier.size(if (LocalConfiguration.current.screenWidthDp < 500) 210.dp else 280.dp))
                           Spacer(modifier = Modifier.height(28.dp))
                           Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                               Column(modifier = Modifier.weight(1f)) {
@@ -3548,24 +3689,24 @@ class MainActivity : ComponentActivity() {
                           }
                           Spacer(modifier = Modifier.height(24.dp))
                           Box(modifier = Modifier.fillMaxWidth().height(3.dp).background(Color(0xFF91A197))) {
-                              Box(modifier = Modifier.fillMaxWidth(if (isPlaying) 0.48f else 0.06f).height(3.dp).background(Color.White))
+                  Box(modifier = Modifier.fillMaxWidth(progressFraction).height(3.dp).background(Color.White))
                           }
                           Row(modifier = Modifier.fillMaxWidth().padding(top = 7.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                              Text(if (isPlaying) "0:49" else "0:00", color = Color(0xFFB8C7BC), fontSize = 12.sp)
-                              Text("-2:34", color = Color(0xFFB8C7BC), fontSize = 12.sp)
+                  Text(formatMusicTime(playbackPositionMs), color = Color(0xFFB8C7BC), fontSize = 12.sp)
+                  Text("-" + formatMusicTime((playbackDurationMs - playbackPositionMs).coerceAtLeast(0L)), color = Color(0xFFB8C7BC), fontSize = 12.sp)
                           }
                           Spacer(modifier = Modifier.height(20.dp))
                           Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceEvenly) {
                               TextButton(onClick = { }) { Text("↝", color = Color.White, fontSize = 28.sp) }
-                              TextButton(onClick = { }) { Text("|‹", color = Color.White, fontSize = 25.sp) }
+                  TextButton(onClick = { playAdjacentSong(-1) }) { Text("|‹", color = Color.White, fontSize = 25.sp) }
                               Button(
-                                  onClick = { isPlaying = !isPlaying },
+                      onClick = { togglePlayback() },
                                   modifier = Modifier.size(68.dp),
                                   shape = RoundedCornerShape(50.dp),
                                   contentPadding = PaddingValues(0.dp),
                                   colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black)
                               ) { Text(if (isPlaying) "Ⅱ" else "▶", fontSize = 27.sp) }
-                              TextButton(onClick = { }) { Text("›|", color = Color.White, fontSize = 25.sp) }
+                  TextButton(onClick = { playAdjacentSong(1) }) { Text("›|", color = Color.White, fontSize = 25.sp) }
                               TextButton(onClick = { }) { Text("⊖", color = Color.White, fontSize = 26.sp) }
                           }
                           Spacer(modifier = Modifier.height(22.dp))
@@ -3699,14 +3840,14 @@ class MainActivity : ComponentActivity() {
                               }
                           }
                       }
-                      if (isPlaying) {
+                  if (selectedSong.streamUrl != null) {
                           Row(modifier = Modifier.fillMaxWidth().background(Color(0xFF0D2416)).padding(horizontal = 12.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
                               AppLogo(modifier = Modifier.size(42.dp))
                               Column(modifier = Modifier.weight(1f).padding(start = 10.dp)) {
                                   Text(selectedSong.title, color = Color.White, fontSize = 13.sp, maxLines = 1)
                                   Text(selectedSong.artist, color = Color(0xFFB4D6B8), fontSize = 11.sp)
                               }
-                              TextButton(onClick = { isPlaying = !isPlaying }) { Text(if (isPlaying) "Ⅱ" else "▶", color = Color.White, fontSize = 20.sp) }
+                  TextButton(onClick = { togglePlayback() }) { Text(if (isPlaying) "Ⅱ" else "▶", color = Color.White, fontSize = 20.sp) }
                           }
                       }
                       Row(modifier = Modifier.fillMaxWidth().background(Color(0xFF123A23)).padding(vertical = 5.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
