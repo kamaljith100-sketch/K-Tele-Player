@@ -1293,6 +1293,46 @@ private const val MUSIC_BRANDING_HOOK = """
         });
     }
 
+    function hideMusicChromeTarget(node, maxTextLength) {
+        if (!node || node === document.body || node === document.documentElement) return;
+        var target = node;
+        for (var depth = 0; depth < 5 && target.parentElement; depth++) {
+            var parent = target.parentElement;
+            if (parent === document.body || parent === document.documentElement) break;
+            var parentText = (parent.innerText || parent.textContent || '').trim().replace(/\s+/g, ' ');
+            if (parentText.length <= maxTextLength && parent.children.length <= 24) {
+                target = parent;
+            } else {
+                break;
+            }
+        }
+        if (target !== document.body && target !== document.documentElement && target !== document.querySelector('main')) {
+            target.style.setProperty('display', 'none', 'important');
+        }
+    }
+
+    function hideMusicChrome(root) {
+        if (!root || !root.querySelectorAll) return;
+        root.querySelectorAll('header, nav').forEach(function(node) {
+            if (node.closest('#__kteleBrandBadge')) return;
+            var text = (node.innerText || node.textContent || '').trim().replace(/\s+/g, ' ');
+            if (/login|play music inside k-tele|home.*search.*library.*profile/i.test(text)) {
+                hideMusicChromeTarget(node, 900);
+            }
+        });
+        root.querySelectorAll('h1,h2,h3,h4,h5,p,span,a,button,li,div,section,article').forEach(function(node) {
+            if (node.closest('#__kteleBrandBadge')) return;
+            var text = (node.innerText || node.textContent || '').trim().replace(/\s+/g, ' ');
+            if (!text || text.length > 320) return;
+            if (/play music inside k-tele|join our socials|latest updates|^login$|^platform$|company\s*&\s*legal|privacy policy|terms of service|cookie policy|^dmca$|^disclaimer$|^about$|^contact$/i.test(text)) {
+                hideMusicChromeTarget(node, 900);
+            }
+        });
+        root.querySelectorAll('footer, [role="contentinfo"]').forEach(function(node) {
+            node.style.setProperty('display', 'none', 'important');
+        });
+    }
+
     function removeBlockingOverlays(root) {
         if (!root || !root.querySelectorAll) return;
         root.querySelectorAll('div, [class], [id]').forEach(function(node) {
@@ -1341,13 +1381,34 @@ private const val MUSIC_BRANDING_HOOK = """
         document.body.appendChild(badge);
     }
 
-    replaceBranding(document.documentElement);
-    hideNonMusicSections(document.documentElement);
-    removeBlockingOverlays(document.documentElement);
-    addBrandBadge();
-    // The music site is a React app. Do not mutate its live search modal or
-    // result tree after the initial cleanup; doing so can break input state.
-    // The ad cleanup hook remains responsible for late ad nodes.
+    var cleanupQueued = false;
+    function runMusicCleanup() {
+        if (!document.documentElement) return;
+        replaceBranding(document.documentElement);
+        hideNonMusicSections(document.documentElement);
+        hideMusicChrome(document.documentElement);
+        removeBlockingOverlays(document.documentElement);
+        addBrandBadge();
+    }
+
+    function scheduleMusicCleanup() {
+        if (cleanupQueued) return;
+        cleanupQueued = true;
+        setTimeout(function() {
+            cleanupQueued = false;
+            runMusicCleanup();
+        }, 180);
+    }
+
+    runMusicCleanup();
+    new MutationObserver(function(records) {
+        var hasPageChanges = records.some(function(record) {
+            return Array.prototype.some.call(record.addedNodes, function(node) {
+                return node.nodeType === 1 && node.id !== '__kteleBrandBadge';
+            });
+        });
+        if (hasPageChanges) scheduleMusicCleanup();
+    }).observe(document.documentElement, { childList: true, subtree: true });
 
 })();
 """
