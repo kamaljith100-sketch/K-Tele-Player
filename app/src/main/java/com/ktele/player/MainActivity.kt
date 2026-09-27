@@ -112,6 +112,8 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 
+import org.json.JSONObject
+
 import org.drinkless.tdlib.Client
 import org.drinkless.tdlib.TdApi
 
@@ -3395,6 +3397,8 @@ class MainActivity : ComponentActivity() {
           var selectedSong by remember { mutableStateOf(kUniverseSongs[3]) }
           var isPlaying by remember { mutableStateOf(false) }
           var lyricsVisible by remember { mutableStateOf(false) }
+          var lyricsLoading by remember { mutableStateOf(false) }
+          var lyricsText by remember { mutableStateOf<String?>(null) }
           var musicWebView by remember { mutableStateOf<WebView?>(null) }
 
           fun closeMusicBrowser() {
@@ -3427,6 +3431,39 @@ class MainActivity : ComponentActivity() {
                       musicWebView = null
                   }
               }
+          }
+
+          LaunchedEffect(selectedSong, lyricsVisible) {
+              if (!lyricsVisible) return@LaunchedEffect
+              lyricsLoading = true
+              lyricsText = null
+              lyricsText = withContext(Dispatchers.IO) {
+                  runCatching {
+                      val endpoint = "https://lrclib.net/api/get?artist_name=${Uri.encode(selectedSong.artist)}&track_name=${Uri.encode(selectedSong.title)}"
+                      val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+                          requestMethod = "GET"
+                          connectTimeout = 10_000
+                          readTimeout = 10_000
+                          setRequestProperty("Accept", "application/json")
+                          setRequestProperty("User-Agent", "K-Tele-Player/1.0")
+                      }
+                      try {
+                          val status = connection.responseCode
+                          val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+                          val payload = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                          if (status !in 200..299) throw IOException("Lyrics request failed: $status")
+                          val json = JSONObject(payload)
+                          json.optString("plainLyrics").takeIf { it.isNotBlank() }
+                              ?: json.optString("syncedLyrics").takeIf { it.isNotBlank() }
+                              ?: "Lyrics were not found for this song."
+                      } finally {
+                          connection.disconnect()
+                      }
+                  }.getOrElse {
+                      "Lyrics could not be loaded right now. Check your internet connection and try again."
+                  }
+              }
+              lyricsLoading = false
           }
 
           when (musicMode) {
@@ -3474,7 +3511,11 @@ class MainActivity : ComponentActivity() {
                                   Column(modifier = Modifier.padding(16.dp)) {
                                       Text(selectedSong.title, color = Color.White, fontWeight = FontWeight.Bold)
                                       Spacer(modifier = Modifier.height(8.dp))
-                                      Text("Lyrics will appear here when they are available for this song.", color = Color(0xFFB8C7BC), fontSize = 14.sp)
+                                      if (lyricsLoading) {
+                                          CircularProgressIndicator(color = Color(0xFF50E879), modifier = Modifier.size(28.dp))
+                                      } else {
+                                          Text(lyricsText ?: "Loading lyrics...", color = Color(0xFFB8C7BC), fontSize = 14.sp)
+                                      }
                                   }
                               }
                           }
