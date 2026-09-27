@@ -30,6 +30,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -80,6 +82,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.viewinterop.AndroidView
 
 import coil.compose.AsyncImage
@@ -3824,6 +3827,7 @@ class MainActivity : ComponentActivity() {
         }
         val initialUrl = selectedBrowserUrl ?: "https://www.google.com"
         var urlText by remember(initialUrl) { mutableStateOf(initialUrl) }
+        var searchQuery by remember { mutableStateOf("") }
         var browserStartUrl by remember(initialUrl) { mutableStateOf(initialUrl) }
         var browserHome by remember(initialUrl) { mutableStateOf(selectedBrowserUrl == null) }
         var browserView by remember { mutableStateOf<WebView?>(null) }
@@ -3966,6 +3970,20 @@ class MainActivity : ComponentActivity() {
                     .padding(horizontal = 24.dp)
             ) {
                 Spacer(modifier = Modifier.height(24.dp))
+
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    label = { Text("Search Google") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(
+                        onSearch = { openUrl(searchQuery, null) },
+                        onDone = { openUrl(searchQuery, null) }
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(16.dp))
 
                 Card(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(16.dp)) {
