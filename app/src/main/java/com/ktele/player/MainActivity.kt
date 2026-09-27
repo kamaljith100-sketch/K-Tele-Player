@@ -78,6 +78,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.SeekParameters
@@ -85,9 +86,11 @@ import androidx.media3.datasource.BaseDataSource
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.CaptionStyleCompat
@@ -106,6 +109,7 @@ import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.IOException
 import java.io.RandomAccessFile
+import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLDecoder
 import java.util.concurrent.CountDownLatch
@@ -266,12 +270,17 @@ private val movieSites = listOf(
 data class IptvChannel(
     val name: String,
     val category: String,
-    val streamUrl: String
+    val streamUrl: String,
+    val userAgent: String? = null,
+    val referrer: String? = null
 )
 
 private const val DEFAULT_IPTV_PLAYLIST_URL = "https://iptv-org.github.io/iptv/index.m3u"
+private const val IPTV_DEFAULT_USER_AGENT =
+    "Mozilla/5.0 (Android) AppleWebKit/537.36 Chrome/131.0 Mobile Safari/537.36"
 
 private val iptvGroupPattern = Regex("""group-title="([^"]*)"""")
+private val iptvAttributePattern = Regex("""([\w-]+)="([^"]*)"""")
 
 private fun normalizeIptvCategory(groupTitle: String, channelName: String): String? {
     val searchable = (groupTitle + " " + channelName).lowercase()
@@ -284,32 +293,74 @@ private fun normalizeIptvCategory(groupTitle: String, channelName: String): Stri
     }
 }
 
+private fun parseM3uTitle(line: String): String {
+    var quoted = false
+    for (index in line.indices) {
+        when {
+            line[index] == '"' -> quoted = !quoted
+            line[index] == ',' && !quoted -> return line.substring(index + 1).trim()
+        }
+    }
+    return "Untitled channel"
+}
+
 private fun parseIptvPlaylist(contents: String): List<IptvChannel> {
     val channels = mutableListOf<IptvChannel>()
     var pendingName = ""
     var pendingGroup = ""
+    var pendingUserAgent: String? = null
+    var pendingReferrer: String? = null
 
     contents.lineSequence().forEach { rawLine ->
         val line = rawLine.trim()
         when {
             line.startsWith("#EXTINF", ignoreCase = true) -> {
-                pendingName = line.substringAfter(",", "Untitled channel").trim()
-                pendingGroup = iptvGroupPattern.find(line)?.groupValues?.getOrNull(1).orEmpty()
+                val attributes = iptvAttributePattern.findAll(line)
+                    .associate { it.groupValues[1].lowercase() to it.groupValues[2] }
+                pendingName = parseM3uTitle(line)
+                pendingGroup = attributes["group-title"].orEmpty()
+                pendingUserAgent = attributes["http-user-agent"]
+                    ?: attributes["user-agent"]
+                pendingReferrer = attributes["http-referrer"]
+                    ?: attributes["referrer"]
+            }
+            line.startsWith("#EXTVLCOPT:", ignoreCase = true) -> {
+                val option = line.substringAfter(':').trim()
+                val key = option.substringBefore('=').trim().lowercase()
+                val value = option.substringAfter('=', "").trim().trim('"')
+                when (key) {
+                    "http-user-agent", "user-agent" -> pendingUserAgent = value
+                    "http-referrer", "referrer" -> pendingReferrer = value
+                }
             }
             line.isNotEmpty() && !line.startsWith("#") && pendingName.isNotEmpty() -> {
                 val category = normalizeIptvCategory(pendingGroup, pendingName) ?: "Other"
                 channels += IptvChannel(
                     name = pendingName,
                     category = category,
-                    streamUrl = line
+                    streamUrl = line,
+                    userAgent = pendingUserAgent,
+                    referrer = pendingReferrer
                 )
                 pendingName = ""
                 pendingGroup = ""
+                pendingUserAgent = null
+                pendingReferrer = null
             }
         }
     }
 
     return channels.distinctBy { it.streamUrl }
+}
+
+private fun buildIptvMediaItem(channel: IptvChannel): MediaItem {
+    val lowerUrl = channel.streamUrl.lowercase()
+    val builder = MediaItem.Builder().setUri(channel.streamUrl)
+    when {
+        ".m3u8" in lowerUrl -> builder.setMimeType(MimeTypes.APPLICATION_M3U8)
+        ".mpd" in lowerUrl -> builder.setMimeType(MimeTypes.APPLICATION_MPD)
+    }
+    return builder.build()
 }
 
 data class VideoItem(
@@ -2199,7 +2250,22 @@ class MainActivity : ComponentActivity() {
         iptvError = ""
         try {
             val rawPlaylist = withContext(Dispatchers.IO) {
-                URL(trimmedUrl).openStream().bufferedReader().use { it.readText() }
+                val connection = URL(trimmedUrl).openConnection() as? HttpURLConnection
+                    ?: throw IOException("Unsupported playlist URL")
+                try {
+                    connection.connectTimeout = 15_000
+                    connection.readTimeout = 30_000
+                    connection.instanceFollowRedirects = true
+                    connection.setRequestProperty("User-Agent", IPTV_DEFAULT_USER_AGENT)
+                    connection.connect()
+                    val status = connection.responseCode
+                    if (status !in 200..299) {
+                        throw IOException("Playlist server returned HTTP $status")
+                    }
+                    connection.inputStream.bufferedReader().use { it.readText() }
+                } finally {
+                    connection.disconnect()
+                }
             }
             iptvPlaylistUrl = trimmedUrl
             iptvChannels = parseIptvPlaylist(rawPlaylist)
@@ -2502,17 +2568,40 @@ class MainActivity : ComponentActivity() {
         var playerError by remember(channel.streamUrl) { mutableStateOf("") }
         var controlsVisible by remember(channel.streamUrl) { mutableStateOf(true) }
         var fillVideo by remember(channel.streamUrl) { mutableStateOf(true) }
-        val player = remember(channel.streamUrl) {
-            ExoPlayer.Builder(context).build().apply {
-                setMediaItem(MediaItem.fromUri(channel.streamUrl))
-                playWhenReady = true
-                addListener(object : Player.Listener {
-                    override fun onPlayerError(error: PlaybackException) {
-                        playerError = "Playback error: " + error.errorCodeName
-                    }
-                })
-                prepare()
+        val player = remember(
+            channel.streamUrl,
+            channel.userAgent,
+            channel.referrer
+        ) {
+            val httpFactory = DefaultHttpDataSource.Factory()
+                .setAllowCrossProtocolRedirects(true)
+                .setConnectTimeoutMs(15_000)
+                .setReadTimeoutMs(30_000)
+                .setUserAgent(channel.userAgent ?: IPTV_DEFAULT_USER_AGENT)
+            channel.referrer?.takeIf { it.isNotBlank() }?.let { referrer ->
+                httpFactory.setDefaultRequestProperties(mapOf("Referer" to referrer))
             }
+
+            val mediaSourceFactory = DefaultMediaSourceFactory(
+                context,
+                DefaultDataSource.Factory(context, httpFactory)
+            )
+
+            ExoPlayer.Builder(context)
+                .setMediaSourceFactory(mediaSourceFactory)
+                .build()
+                .apply {
+                    setMediaItem(buildIptvMediaItem(channel))
+                    playWhenReady = true
+                    addListener(object : Player.Listener {
+                        override fun onPlayerError(error: PlaybackException) {
+                            val cause = error.cause?.message ?: error.message.orEmpty()
+                            playerError = "Playback error: ${error.errorCodeName}" +
+                                if (cause.isBlank()) "" else " - $cause"
+                        }
+                    })
+                    prepare()
+                }
         }
 
         DisposableEffect(player) {
