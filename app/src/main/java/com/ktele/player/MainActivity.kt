@@ -181,13 +181,29 @@ private val catalogCategories = listOf(
 
 private const val MALAYALAM_RADIO_URL = "https://radiosindia.com/malayalamradio.html"
 
+private val MALAYALAM_RADIO_STREAM_EXTENSIONS = listOf(
+    ".mp3", ".aac", ".m3u8", ".pls", ".ogg", ".wav", ".flac"
+)
+
 private fun isMalayalamRadioPageUrl(rawUrl: String): Boolean {
     val uri = runCatching { Uri.parse(rawUrl) }.getOrNull() ?: return false
     val host = uri.host?.lowercase() ?: return false
-    return uri.scheme.equals("https", ignoreCase = true) &&
+    return (uri.scheme.equals("http", ignoreCase = true) ||
+        uri.scheme.equals("https", ignoreCase = true)) &&
         (host == "radiosindia.com" || host == "www.radiosindia.com") &&
         uri.path?.trimEnd('/') == "/malayalamradio.html"
 }
+
+private fun isMalayalamRadioStreamUrl(rawUrl: String): Boolean {
+    val uri = runCatching { Uri.parse(rawUrl) }.getOrNull() ?: return false
+    if (!uri.scheme.equals("http", ignoreCase = true) &&
+        !uri.scheme.equals("https", ignoreCase = true)) return false
+    val path = uri.path?.lowercase().orEmpty()
+    return MALAYALAM_RADIO_STREAM_EXTENSIONS.any { path.endsWith(it) }
+}
+
+private fun isAllowedMalayalamRadioUrl(rawUrl: String): Boolean =
+    isMalayalamRadioPageUrl(rawUrl) || isMalayalamRadioStreamUrl(rawUrl)
 
 // Demo entries are open/licensed films. Replace or extend these with your own licensed catalog.
 private val catalogMovies = listOf(
@@ -2932,7 +2948,7 @@ class MainActivity : ComponentActivity() {
             val trimmed = rawUrl.trim()
             if (trimmed.isEmpty()) return
 
-            if (radioOnlyMode && !isMalayalamRadioPageUrl(trimmed)) return
+            if (radioOnlyMode && !isAllowedMalayalamRadioUrl(trimmed)) return
 
             if (normalizeTorrentSource(trimmed) != null) {
                 showTorrentSource(trimmed)
@@ -3181,7 +3197,7 @@ class MainActivity : ComponentActivity() {
                                 request: WebResourceRequest
                             ): Boolean {
                                 val url = request.url.toString()
-                                if (radioOnlyMode && !isMalayalamRadioPageUrl(url)) return true
+                                if (radioOnlyMode && !isAllowedMalayalamRadioUrl(url)) return true
                                 if (normalizeTorrentSource(url) != null) {
                                     showTorrentSource(url)
                                     return true
@@ -3197,7 +3213,7 @@ class MainActivity : ComponentActivity() {
                                 view: WebView,
                                 url: String
                             ): Boolean {
-                                if (radioOnlyMode && !isMalayalamRadioPageUrl(url)) return true
+                                if (radioOnlyMode && !isAllowedMalayalamRadioUrl(url)) return true
                                 if (normalizeTorrentSource(url) != null) {
                                     showTorrentSource(url)
                                     return true
