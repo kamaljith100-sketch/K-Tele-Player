@@ -3305,6 +3305,12 @@ class MainActivity : ComponentActivity() {
             view?.loadUrl(target)
         }
 
+        fun persistBookmarks(values: List<String>) {
+            bookmarkPreferences.edit()
+                .putStringSet("urls", values.toSet())
+                .apply()
+        }
+
         fun addBookmark() {
             val value = urlText.trim()
             if (
@@ -3312,8 +3318,16 @@ class MainActivity : ComponentActivity() {
                     value.startsWith("https://", ignoreCase = true)) &&
                 !bookmarks.contains(value)
             ) {
-                bookmarks = bookmarks + value
+                val updated = (bookmarks + value).distinct()
+                bookmarks = updated
+                persistBookmarks(updated)
             }
+        }
+
+        fun deleteBookmark(valueToDelete: String = urlText.trim()) {
+            val updated = bookmarks.filterNot { it == valueToDelete }
+            bookmarks = updated
+            persistBookmarks(updated)
         }
 
         BackHandler {
@@ -3426,11 +3440,19 @@ class MainActivity : ComponentActivity() {
                                 )
                             } else {
                                 bookmarks.forEach { bookmark ->
-                                    TextButton(
-                                        onClick = { openUrl(bookmark, null) },
-                                        modifier = Modifier.fillMaxWidth()
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text(bookmark, modifier = Modifier.fillMaxWidth())
+                                        TextButton(
+                                            onClick = { openUrl(bookmark, null) },
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Text(bookmark, modifier = Modifier.fillMaxWidth())
+                                        }
+                                        TextButton(onClick = { deleteBookmark(bookmark) }) {
+                                            Text("Delete")
+                                        }
                                     }
                                 }
                             }
@@ -3449,6 +3471,10 @@ class MainActivity : ComponentActivity() {
                 }
             }
         } else {
+            val currentBookmark = urlText.trim()
+            val currentIsBookmarked = currentBookmark.isNotEmpty() &&
+                bookmarks.contains(currentBookmark)
+
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -3486,12 +3512,17 @@ class MainActivity : ComponentActivity() {
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.Center
                 ) {
-                    TextButton(onClick = { browserView?.goBack() }) { Text("Back") }
-                    TextButton(onClick = { addBookmark() }) { Text("Bookmark") }
-                    TextButton(onClick = { browserView?.goForward() }) { Text("Forward") }
-                    TextButton(onClick = { browserView?.reload() }) { Text("Reload") }
+                    if (currentIsBookmarked) {
+                        TextButton(onClick = { deleteBookmark(currentBookmark) }) {
+                            Text("Delete Bookmark")
+                        }
+                    } else {
+                        TextButton(onClick = { addBookmark() }) {
+                            Text("Bookmark")
+                        }
+                    }
                 }
 
             AndroidView(
