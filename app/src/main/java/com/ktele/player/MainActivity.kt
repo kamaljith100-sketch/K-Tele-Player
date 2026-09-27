@@ -1464,6 +1464,50 @@ private const val MUSIC_BRANDING_HOOK = """
         });
     }
 
+    function trimSystemPreferences(root) {
+        if (!root || !root.querySelectorAll) return;
+
+        var systemHeading = null;
+        root.querySelectorAll('h1,h2,h3,h4,h5,h6,p,span,div').forEach(function(node) {
+            if (systemHeading) return;
+            var text = (node.innerText || node.textContent || '').trim().replace(/\s+/g, ' ');
+            if (/^system\s+preferences$/i.test(text)) systemHeading = node;
+        });
+        if (!systemHeading) return;
+
+        var marker = null;
+        root.querySelectorAll('h1,h2,h3,h4,h5,h6,p,span,div').forEach(function(node) {
+            if (marker) return;
+            var text = (node.innerText || node.textContent || '').trim().replace(/\s+/g, ' ');
+            if (text.length > 120) return;
+            if (!/^(installing\s+(?:the\s+)?app|open\s+(?:the\s+)?guide)\b/i.test(text)) return;
+            var position = systemHeading.compareDocumentPosition(node);
+            if (position & Node.DOCUMENT_POSITION_FOLLOWING) marker = node;
+        });
+        if (!marker) return;
+
+        var card = marker.closest && marker.closest('section, article, [role="region"], [class*="card"], [class*="Card"]');
+        if (!card) {
+            card = marker;
+            var ancestor = marker.parentElement;
+            for (var depth = 0; ancestor && depth < 8; depth++) {
+                var ancestorText = (ancestor.innerText || ancestor.textContent || '').trim().replace(/\s+/g, ' ');
+                if (ancestorText.length >= 40 && ancestorText.length <= 900) card = ancestor;
+                ancestor = ancestor.parentElement;
+            }
+        }
+
+        var container = card.parentElement;
+        if (!container) return;
+        var children = Array.prototype.slice.call(container.children);
+        var cardIndex = children.indexOf(card);
+        if (cardIndex < 0) return;
+
+        for (var index = cardIndex; index < children.length; index++) {
+            children[index].style.setProperty('display', 'none', 'important');
+        }
+    }
+
     function replaceBranding(root) {
         if (!root) return;
         var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
@@ -1619,6 +1663,7 @@ private const val MUSIC_BRANDING_HOOK = """
         if (!document.documentElement) return;
         replaceBranding(document.documentElement);
         configureLanguageSuggestions(document.documentElement);
+        trimSystemPreferences(document.documentElement);
         hideNonMusicSections(document.documentElement);
         hideMusicChrome(document.documentElement);
         removeBlockingOverlays(document.documentElement);
