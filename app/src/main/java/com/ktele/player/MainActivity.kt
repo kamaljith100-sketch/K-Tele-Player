@@ -4073,7 +4073,6 @@ class MainActivity : ComponentActivity() {
                   musicMode == "browse" && musicWebView?.canGoBack() == true -> musicWebView?.goBack()
                   musicMode == "now" -> musicMode = "browse"
                   else -> closeMusicBrowser()
-                  else -> closeMusicBrowser()
               }
           }
 
