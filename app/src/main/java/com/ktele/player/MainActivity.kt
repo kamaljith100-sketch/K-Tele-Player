@@ -317,6 +317,78 @@ private fun resolveMusicTrack(song: KUniverseSong): ResolvedMusicTrack? {
     return ResolvedMusicTrack(streamUrl, track.optInt("duration", 0), imageUrl)
 }
 
+private fun searchMusicSongs(query: String): List<KUniverseSong> {
+    val trimmedQuery = query.trim()
+    if (trimmedQuery.isBlank()) return emptyList()
+
+    val connection = (URL(
+        MUSIC_API_BASE_URL + "/search?query=" + Uri.encode(trimmedQuery)
+    ).openConnection() as HttpURLConnection).apply {
+        requestMethod = "GET"
+        connectTimeout = 12_000
+        readTimeout = 12_000
+        setRequestProperty("Accept", "application/json")
+        setRequestProperty("User-Agent", "K-Tele-Player/1.0")
+    }
+
+    return try {
+        if (connection.responseCode !in 200..299) return emptyList()
+        val payload = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+        val results = payload
+            .optJSONObject("data")
+            ?.optJSONObject("songs")
+            ?.optJSONArray("results")
+            ?: return emptyList()
+
+        val seen = mutableSetOf<String>()
+        buildList {
+            for (index in 0 until results.length()) {
+                val result = results.optJSONObject(index) ?: continue
+                val title = result.optString("title").trim()
+                if (title.isBlank()) continue
+
+                val artists = result.optJSONObject("artists")?.optJSONArray("primary")
+                val artist = buildList {
+                    if (artists != null) {
+                        for (artistIndex in 0 until artists.length()) {
+                            artists.optJSONObject(artistIndex)?.optString("name")
+                                ?.trim()
+                                ?.takeIf { it.isNotBlank() }
+                                ?.let(::add)
+                        }
+                    }
+                }.joinToString(", ").ifBlank {
+                    result.optString("primaryArtists").trim()
+                        .ifBlank { result.optString("artist").trim() }
+                        .ifBlank { "Unknown artist" }
+                }
+
+                val key = "$title\u0000$artist"
+                if (!seen.add(key)) continue
+                val images = result.optJSONArray("image")
+                val imageUrl = images
+                    ?.optJSONObject(images.length() - 1)
+                    ?.optString("url")
+                    ?.takeIf { it.isNotBlank() }
+
+                add(
+                    KUniverseSong(
+                        title = title,
+                        artist = artist,
+                        searchQuery = title,
+                        imageUrl = imageUrl
+                    )
+                )
+                if (size == 50) break
+            }
+        }
+    } catch (_: Exception) {
+        emptyList()
+    } finally {
+        connection.disconnect()
+    }
+}
+
 private fun enqueueMusicDownload(context: Context, song: KUniverseSong, streamUrl: String): Boolean {
     val safeTitle = song.title.replace(Regex("[^A-Za-z0-9 _-]"), "_").trim().ifBlank { "K-Universe-track" }
     return runCatching {
@@ -1346,7 +1418,7 @@ private const val MUSIC_BRANDING_HOOK = """
         root.querySelectorAll('button, [role="button"], a').forEach(function(node) {
             if (node.closest('#__kteleLanguageBar')) return;
             var label = (node.innerText || node.textContent || '').trim().replace(/\s+/g, ' ');
-            if (/^(English|Telugu|Hindi|Tamil)$/i.test(label)) {
+            if (/^(English|Telugu|Hindi|Tamil|Malayalam)$/i.test(label)) {
                 native[label.toLowerCase()] = node;
             }
         });
@@ -3757,6 +3829,12 @@ class MainActivity : ComponentActivity() {
           var lyricsLoading by remember { mutableStateOf(false) }
           var lyricsText by remember { mutableStateOf<String?>(null) }
           var searchQuery by remember { mutableStateOf("") }
+           var browseSearchQuery by remember { mutableStateOf("") }
+           var browseSearchResults by remember { mutableStateOf<List<KUniverseSong>>(emptyList()) }
+           var browseSearchLoading by remember { mutableStateOf(false) }
+           var browseSearchMessage by remember { mutableStateOf<String?>(null) }
+           var browseSearchSubmitted by remember { mutableStateOf(false) }
+           val browseSearchFocusRequester = remember { FocusRequester() }
           var musicWebView by remember { mutableStateOf<WebView?>(null) }
           val musicContext = LocalContext.current
           val musicScope = rememberCoroutineScope()
@@ -3802,6 +3880,30 @@ class MainActivity : ComponentActivity() {
               musicBrowserOpen = false
               mediaHubOpen = true
           }
+
+           fun searchAllSongs() {
+               val query = browseSearchQuery.trim()
+               if (query.isBlank()) {
+                   browseSearchResults = emptyList()
+                   browseSearchMessage = null
+                   browseSearchSubmitted = false
+                   return
+               }
+
+               browseSearchSubmitted = true
+               browseSearchLoading = true
+               browseSearchMessage = null
+               musicScope.launch {
+                   val results = withContext(Dispatchers.IO) { searchMusicSongs(query) }
+                   browseSearchLoading = false
+                   browseSearchResults = results
+                   browseSearchMessage = if (results.isEmpty()) {
+                       "No songs found for \"$query\"."
+                   } else {
+                       null
+                   }
+               }
+           }
 
           fun openSong(song: KUniverseSong) {
               selectedSong = song
@@ -3969,56 +4071,138 @@ class MainActivity : ComponentActivity() {
                           TextButton(onClick = { musicMode = "library" }) { Text("‹", color = Color.White, fontSize = 30.sp) }
                           AppLogo(modifier = Modifier.size(32.dp))
                           Text("Browse Music", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f).padding(start = 10.dp))
-                          TextButton(onClick = { musicMode = "library" }) {
-                              Text("Search All Songs", color = Color(0xFF8CF5A7), fontSize = 11.sp)
+                           TextButton(onClick = { browseSearchFocusRequester.requestFocus() }) {
+                               Text("Search All Songs", color = Color(0xFF8CF5A7), fontSize = 11.sp)
                           }
                       }
-                      AndroidView(
-                          factory = { viewContext ->
-                              WebView(viewContext).apply {
-                                  setBackgroundColor(android.graphics.Color.rgb(8, 8, 8))
-                                  settings.javaScriptEnabled = true
-                                  settings.domStorageEnabled = true
-                                  settings.javaScriptCanOpenWindowsAutomatically = false
-                                  settings.setSupportMultipleWindows(false)
-                                  settings.mediaPlaybackRequiresUserGesture = false
-                                  settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-                                  settings.allowContentAccess = true
-                                  settings.allowFileAccess = true
-                                  webChromeClient = WebChromeClient()
-                                  webViewClient = object : WebViewClient() {
-                                      override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                                          val url = request.url.toString()
-                                          if (isBlockedAdRequest(url)) return true
-                                          val scheme = request.url.scheme.orEmpty().lowercase()
-                                          return scheme != "http" && scheme != "https"
-                                      }
-                                      @Suppress("DEPRECATION")
-                                      override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
-                                          if (isBlockedAdRequest(url)) return true
-                                          val scheme = Uri.parse(url).scheme.orEmpty().lowercase()
-                                          return scheme != "http" && scheme != "https"
-                                      }
-                                      override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
-                                          if (isBlockedAdRequest(request.url.toString())) return WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(ByteArray(0)))
-                                          return super.shouldInterceptRequest(view, request)
-                                      }
-                                      @Suppress("DEPRECATION")
-                                      override fun shouldInterceptRequest(view: WebView, url: String): WebResourceResponse? {
-                                          if (isBlockedAdRequest(url)) return WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(ByteArray(0)))
-                                          return super.shouldInterceptRequest(view, url)
-                                      }
-                                      override fun onPageFinished(view: WebView, url: String) {
-                                          view.evaluateJavascript(AD_CLEANUP_HOOK, null)
-                                          view.evaluateJavascript(MUSIC_BRANDING_HOOK, null)
-                                      }
-                                  }
-                                  loadUrl(MUSIC_SITE_URL)
-                                  musicWebView = this
-                              }
-                          },
-                          modifier = Modifier.fillMaxWidth().weight(1f)
-                      )
+                       OutlinedTextField(
+                           value = browseSearchQuery,
+                           onValueChange = {
+                               browseSearchQuery = it
+                               if (it.isBlank()) {
+                                   browseSearchSubmitted = false
+                                   browseSearchResults = emptyList()
+                                   browseSearchMessage = null
+                               }
+                           },
+                           placeholder = { Text("Search all songs") },
+                           singleLine = true,
+                           modifier = Modifier
+                               .fillMaxWidth()
+                               .padding(horizontal = 12.dp, vertical = 8.dp)
+                               .focusRequester(browseSearchFocusRequester),
+                           keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                           keyboardActions = KeyboardActions(onSearch = { searchAllSongs() }),
+                           trailingIcon = {
+                               TextButton(
+                                   onClick = { searchAllSongs() },
+                                   enabled = browseSearchQuery.isNotBlank()
+                               ) {
+                                   Text("Search", color = Color(0xFF8CF5A7))
+                               }
+                           }
+                       )
+                       if (browseSearchSubmitted) {
+                           if (browseSearchLoading) {
+                               Box(
+                                   modifier = Modifier.fillMaxWidth().weight(1f),
+                                   contentAlignment = Alignment.Center
+                               ) {
+                                   CircularProgressIndicator(color = Color(0xFF50E879))
+                               }
+                           } else if (browseSearchResults.isEmpty()) {
+                               Box(
+                                   modifier = Modifier.fillMaxWidth().weight(1f),
+                                   contentAlignment = Alignment.Center
+                               ) {
+                                   Text(
+                                       browseSearchMessage ?: "No songs found.",
+                                       color = Color(0xFFB4D6B8),
+                                       modifier = Modifier.padding(24.dp)
+                                   )
+                               }
+                           } else {
+                               LazyColumn(
+                                   modifier = Modifier.fillMaxWidth().weight(1f),
+                                   contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)
+                               ) {
+                                   items(browseSearchResults) { song ->
+                                       Row(
+                                           modifier = Modifier
+                                               .fillMaxWidth()
+                                               .clickable { openSong(song) }
+                                               .padding(vertical = 8.dp),
+                                           verticalAlignment = Alignment.CenterVertically
+                                       ) {
+                                           song.imageUrl?.let { imageUrl ->
+                                               AsyncImage(
+                                                   model = imageUrl,
+                                                   contentDescription = song.title,
+                                                   contentScale = ContentScale.Crop,
+                                                   modifier = Modifier.size(54.dp)
+                                               )
+                                           } ?: AppLogo(modifier = Modifier.size(54.dp))
+                                           Column(
+                                               modifier = Modifier
+                                                   .weight(1f)
+                                                   .padding(start = 12.dp)
+                                           ) {
+                                               Text(song.title, color = Color.White, fontSize = 15.sp, maxLines = 1)
+                                               Text(song.artist, color = Color(0xFFB4D6B8), fontSize = 12.sp, maxLines = 1)
+                                           }
+                                           Text("▶", color = Color(0xFF50E879), fontSize = 18.sp)
+                                       }
+                                   }
+                               }
+                           }
+                       } else {
+                           AndroidView(
+                               factory = { viewContext ->
+                                   WebView(viewContext).apply {
+                                       setBackgroundColor(android.graphics.Color.rgb(8, 8, 8))
+                                       settings.javaScriptEnabled = true
+                                       settings.domStorageEnabled = true
+                                       settings.javaScriptCanOpenWindowsAutomatically = false
+                                       settings.setSupportMultipleWindows(false)
+                                       settings.mediaPlaybackRequiresUserGesture = false
+                                       settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+                                       settings.allowContentAccess = true
+                                       settings.allowFileAccess = true
+                                       webChromeClient = WebChromeClient()
+                                       webViewClient = object : WebViewClient() {
+                                           override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                                               val url = request.url.toString()
+                                               if (isBlockedAdRequest(url)) return true
+                                               val scheme = request.url.scheme.orEmpty().lowercase()
+                                               return scheme != "http" && scheme != "https"
+                                           }
+                                           @Suppress("DEPRECATION")
+                                           override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
+                                               if (isBlockedAdRequest(url)) return true
+                                               val scheme = Uri.parse(url).scheme.orEmpty().lowercase()
+                                               return scheme != "http" && scheme != "https"
+                                           }
+                                           override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+                                               if (isBlockedAdRequest(request.url.toString())) return WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(ByteArray(0)))
+                                               return super.shouldInterceptRequest(view, request)
+                                           }
+                                           @Suppress("DEPRECATION")
+                                           override fun shouldInterceptRequest(view: WebView, url: String): WebResourceResponse? {
+                                               if (isBlockedAdRequest(url)) return WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(ByteArray(0)))
+                                               return super.shouldInterceptRequest(view, url)
+                                           }
+                                           override fun onPageFinished(view: WebView, url: String) {
+                                               view.evaluateJavascript(AD_CLEANUP_HOOK, null)
+                                               view.evaluateJavascript(MUSIC_BRANDING_HOOK, null)
+                                           }
+                                       }
+                                       loadUrl(MUSIC_SITE_URL)
+                                       musicWebView = this
+                                   }
+                               },
+                               modifier = Modifier.fillMaxWidth().weight(1f)
+                           )
+                       }
                       Row(modifier = Modifier.fillMaxWidth().background(Color(0xFF123A23)).padding(vertical = 5.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
                           TextButton(onClick = { musicMode = "library" }) { Text("⌂  Library", color = Color(0xFF8CF5A7), fontSize = 12.sp) }
                           TextButton(onClick = { musicWebView?.reload() }) { Text("⌕  Browse", color = Color.White, fontSize = 12.sp) }
