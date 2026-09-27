@@ -1279,30 +1279,10 @@ private const val MUSIC_BRANDING_HOOK = """
     hideNonMusicSections(document.documentElement);
     removeBlockingOverlays(document.documentElement);
     addBrandBadge();
-    var cleanupScheduled = false;
-    function scheduleMusicCleanup() {
-        if (cleanupScheduled) return;
-        cleanupScheduled = true;
-        setTimeout(function() {
-            cleanupScheduled = false;
-            replaceBranding(document.documentElement);
-            hideNonMusicSections(document.documentElement);
-            removeBlockingOverlays(document.documentElement);
-            addBrandBadge();
-        }, 0);
-    }
+    // The music site is a React app. Do not mutate its live search modal or
+    // result tree after the initial cleanup; doing so can break input state.
+    // The ad cleanup hook remains responsible for late ad nodes.
 
-    new MutationObserver(function(records) {
-        var hasRelevantChange = records.some(function(record) {
-            return record.type === 'childList' || record.type === 'attributes';
-        });
-        if (hasRelevantChange) scheduleMusicCleanup();
-    }).observe(document.documentElement, {
-        childList: true,
-        subtree: true,
-        attributes: true,
-        attributeFilter: ['class', 'style', 'id', 'aria-hidden']
-    });
 })();
 """
 
