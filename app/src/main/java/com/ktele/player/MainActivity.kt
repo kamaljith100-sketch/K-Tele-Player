@@ -1052,30 +1052,22 @@ private const val TORRENT_LINK_HOOK = """
 """
 
 private val BLOCKED_AD_HOST_MARKERS = listOf(
-    "doubleclick.net",
-    "googlesyndication.com",
-    "googleadservices.com",
-    "adservice.google.com",
-    "adsystem.com",
-    "adnxs.com",
-    "amazon-adsystem.com",
-    "popads.net",
-    "popcash.net",
-    "propellerads.com",
-    "exoclick.com",
-    "onclickads.net",
-    "trafficjunky.com"
+    "doubleclick.net", "googlesyndication.com", "googleadservices.com",
+    "adservice.google.com", "adsystem.com", "adnxs.com", "amazon-adsystem.com",
+    "popads.net", "popcash.net", "propellerads.com", "exoclick.com",
+    "onclickads.net", "trafficjunky.com", "adskeeper.com", "adsterra.com",
+    "monetag.com", "clickadu.com", "juicyads.com", "hilltopads.net",
+    "ad-maven.com", "adf.ly", "linkvertise.com", "taboola.com", "outbrain.com",
+    "revcontent.com", "mgid.com", "criteo.com", "media.net", "quantserve.com",
+    "scorecardresearch.com", "sharethrough.com", "bidvertiser.com", "appier.com",
+    "googletagmanager.com", "googletagservices.com"
 )
 
 private val BLOCKED_AD_PATH_MARKERS = listOf(
-    "/adserver",
-    "/adservice",
-    "/ads/",
-    "/banner",
-    "/popunder",
-    "doubleclick",
-    "googlesyndication",
-    "googleadservices"
+    "/adserver", "/adservice", "/ads/", "/ads?", "/banner", "/banners/",
+    "/popunder", "/popup", "/adframe", "/ad_iframe", "/advert", "/sponsor",
+    "doubleclick", "googlesyndication", "googleadservices", "googletagmanager",
+    "googletagservices", "ad_script", "adsbygoogle"
 )
 
 private fun isBlockedAdRequest(rawUrl: String): Boolean {
@@ -1092,7 +1084,7 @@ private const val AD_CLEANUP_HOOK = """
     window.__kteleAdCleanupInstalled = true;
 
     var markerPattern = /(^|[-_])(?:ad|ads|advert|advertisement|banner|popunder|sponsor)(?:$|[-_])/i;
-    var urlPattern = /(doubleclick|googlesyndication|googleadservices|adservice|adsystem|adnxs|popads|popcash|propellerads|exoclick|onclickads|trafficjunky)/i;
+    var urlPattern = /(doubleclick|googlesyndication|googleadservices|adservice|adsystem|adnxs|popads|popcash|propellerads|exoclick|onclickads|trafficjunky|adskeeper|adsterra|monetag|clickadu|juicyads|hilltopads|ad-maven|taboola|outbrain|revcontent|mgid|criteo|media\.net|quantserve|scorecardresearch|sharethrough|bidvertiser|googletagmanager|googletagservices)/i;
 
     function hideIfAd(node) {
         if (!(node instanceof Element)) return;
@@ -1129,6 +1121,56 @@ private const val AD_CLEANUP_HOOK = """
                 if (node.nodeType === 1) cleanAds(node);
             });
         });
+    }).observe(document.documentElement, { childList: true, subtree: true });
+})();
+"""
+
+private const val MUSIC_BRANDING_HOOK = """
+(function() {
+    if (window.__kteleMusicBrandingInstalled) return;
+    window.__kteleMusicBrandingInstalled = true;
+    var brandPattern = /(?:listen\s*free|free\s*listen)(?:\.in)?/ig;
+
+    function replaceBranding(root) {
+        if (!root) return;
+        var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        var node;
+        while ((node = walker.nextNode())) {
+            if (node.parentElement && node.parentElement.closest('#__kteleBrandBadge')) continue;
+            if (brandPattern.test(node.nodeValue || '')) {
+                node.nodeValue = node.nodeValue.replace(brandPattern, 'K Universe');
+            }
+            brandPattern.lastIndex = 0;
+        }
+        root.querySelectorAll('img, source').forEach(function(media) {
+            var label = ((media.getAttribute('alt') || '') + ' ' +
+                (media.getAttribute('title') || '') + ' ' +
+                (media.getAttribute('src') || '')).toLowerCase();
+            if (brandPattern.test(label)) {
+                media.style.setProperty('display', 'none', 'important');
+            }
+            brandPattern.lastIndex = 0;
+        });
+    }
+
+    function addBrandBadge() {
+        if (document.getElementById('__kteleBrandBadge') || !document.body) return;
+        var badge = document.createElement('div');
+        badge.id = '__kteleBrandBadge';
+        badge.innerHTML = '<span style="font-size:18px;line-height:1">✦</span><span>K Universe</span>';
+        badge.style.cssText = 'position:fixed;top:8px;left:8px;z-index:2147483647;display:flex;align-items:center;gap:7px;padding:7px 11px;border-radius:18px;background:rgba(5,15,10,.92);color:#8cf5a7;font:700 13px sans-serif;box-shadow:0 2px 12px rgba(0,0,0,.35);pointer-events:none';
+        document.body.appendChild(badge);
+    }
+
+    replaceBranding(document.documentElement);
+    addBrandBadge();
+    new MutationObserver(function(records) {
+        records.forEach(function(record) {
+            record.addedNodes.forEach(function(node) {
+                if (node.nodeType === 1) replaceBranding(node);
+            });
+        });
+        addBrandBadge();
     }).observe(document.documentElement, { childList: true, subtree: true });
 })();
 """
@@ -3300,9 +3342,16 @@ class MainActivity : ComponentActivity() {
 
       @Composable
       private fun MusicBrowserScreen() {
-            var musicWebView by remember { mutableStateOf<WebView?>(null) }
-          var musicTitle by remember { mutableStateOf("ListenFree") }
+          var musicWebView by remember { mutableStateOf<WebView?>(null) }
+          var musicTitle by remember { mutableStateOf("K Universe") }
           var isMusicLoading by remember { mutableStateOf(true) }
+          var isPlaying by remember { mutableStateOf(false) }
+          var isLiked by remember { mutableStateOf(false) }
+          var shuffleEnabled by remember { mutableStateOf(false) }
+
+          fun runMusicScript(script: String) {
+              musicWebView?.evaluateJavascript(script, null)
+          }
 
           fun closeMusicBrowser() {
               musicWebView?.stopLoading()
@@ -3312,13 +3361,15 @@ class MainActivity : ComponentActivity() {
               mediaHubOpen = true
           }
 
+          fun togglePlayback() {
+              isPlaying = !isPlaying
+              val action = if (isPlaying) "play()" else "pause()"
+              runMusicScript("document.querySelectorAll('audio,video').forEach(function(media){ try { media.$action; } catch(e) {} });")
+          }
+
           BackHandler {
               val view = musicWebView
-              if (view?.canGoBack() == true) {
-                  view.goBack()
-              } else {
-                  closeMusicBrowser()
-              }
+              if (view?.canGoBack() == true) view.goBack() else closeMusicBrowser()
           }
 
           DisposableEffect(Unit) {
@@ -3331,49 +3382,105 @@ class MainActivity : ComponentActivity() {
           Column(
               modifier = Modifier
                   .fillMaxSize()
-                  .background(Color(0xFF07110E))
+                  .background(Color(0xFF101010))
           ) {
               Row(
                   modifier = Modifier
                       .fillMaxWidth()
-                      .background(Color(0xFF0D2117))
+                      .background(Color(0xFF111111))
                       .padding(horizontal = 10.dp, vertical = 8.dp),
                   verticalAlignment = Alignment.CenterVertically
               ) {
                   TextButton(onClick = { closeMusicBrowser() }) {
-                      Text("‹", color = Color(0xFFE8FFF0), fontSize = 30.sp)
+                      Text("‹", color = Color.White, fontSize = 30.sp)
                   }
-                  Column(modifier = Modifier.weight(1f)) {
+                  AppLogo(modifier = Modifier.size(34.dp))
+                  Column(modifier = Modifier.weight(1f).padding(start = 10.dp)) {
                       Text(
-                          "Music",
-                          color = Color(0xFF8CF5A7),
+                          "K Universe",
+                          color = Color.White,
                           style = MaterialTheme.typography.titleLarge,
                           fontWeight = FontWeight.Bold
                       )
                       Text(
-                          musicTitle,
-                          color = Color(0xFFB9CDBE),
+                          if (isMusicLoading) "Loading music..." else musicTitle,
+                          color = Color(0xFFB7B7B7),
                           style = MaterialTheme.typography.bodySmall,
                           maxLines = 1
                       )
                   }
                   TextButton(onClick = { musicWebView?.reload() }) {
-                      Text("↻", color = Color(0xFFE8FFF0), fontSize = 22.sp)
+                      Text("⋮", color = Color.White, fontSize = 24.sp)
                   }
               }
 
-              if (isMusicLoading) {
-                  Text(
-                      "Loading music...",
-                      color = Color(0xFF8CF5A7),
-                      modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp)
-                  )
+              Row(
+                  modifier = Modifier
+                      .fillMaxWidth()
+                      .background(Color(0xFF171717))
+                      .padding(horizontal = 18.dp, vertical = 12.dp),
+                  verticalAlignment = Alignment.CenterVertically
+              ) {
+                  AppLogo(modifier = Modifier.size(96.dp))
+                  Column(modifier = Modifier.weight(1f).padding(start = 16.dp)) {
+                      Text("K Universe Music", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                      Text("Play music inside K-Tele", color = Color(0xFFBDBDBD), fontSize = 14.sp)
+                      Spacer(modifier = Modifier.height(10.dp))
+                      Box(
+                          modifier = Modifier
+                              .fillMaxWidth()
+                              .height(3.dp)
+                              .background(Color(0xFF5E5E5E))
+                      ) {
+                          Box(
+                              modifier = Modifier
+                                  .fillMaxWidth(if (isPlaying) 0.34f else 0.08f)
+                                  .height(3.dp)
+                                  .background(Color.White)
+                          )
+                      }
+                      Row(
+                          modifier = Modifier.fillMaxWidth().padding(top = 5.dp),
+                          horizontalArrangement = Arrangement.SpaceBetween
+                      ) {
+                          Text(if (isPlaying) "Playing" else "Ready", color = Color(0xFFBDBDBD), fontSize = 12.sp)
+                          Text("K Universe", color = Color(0xFFBDBDBD), fontSize = 12.sp)
+                      }
+                  }
+              }
+
+              Row(
+                  modifier = Modifier
+                      .fillMaxWidth()
+                      .background(Color(0xFF171717))
+                      .padding(horizontal = 22.dp, vertical = 8.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.SpaceBetween
+              ) {
+                  TextButton(onClick = { shuffleEnabled = !shuffleEnabled }) {
+                      Text("↝", color = if (shuffleEnabled) Color(0xFF8CF5A7) else Color.White, fontSize = 28.sp)
+                  }
+                  TextButton(onClick = { musicWebView?.goBack() }) {
+                      Text("|‹", color = Color.White, fontSize = 26.sp)
+                  }
+                  TextButton(
+                      onClick = { togglePlayback() },
+                      modifier = Modifier.size(62.dp)
+                  ) {
+                      Text(if (isPlaying) "Ⅱ" else "▶", color = Color.Black, fontSize = 25.sp)
+                  }
+                  TextButton(onClick = { musicWebView?.reload() }) {
+                      Text("›|", color = Color.White, fontSize = 26.sp)
+                  }
+                  TextButton(onClick = { isLiked = !isLiked }) {
+                      Text(if (isLiked) "♥" else "♡", color = if (isLiked) Color(0xFF8CF5A7) else Color.White, fontSize = 28.sp)
+                  }
               }
 
               AndroidView(
                   factory = { viewContext ->
                       WebView(viewContext).apply {
-                          setBackgroundColor(android.graphics.Color.rgb(8, 12, 10))
+                          setBackgroundColor(android.graphics.Color.rgb(12, 12, 12))
                           settings.javaScriptEnabled = true
                           settings.domStorageEnabled = true
                           settings.javaScriptCanOpenWindowsAutomatically = false
@@ -3388,31 +3495,47 @@ class MainActivity : ComponentActivity() {
                                   view: WebView,
                                   request: WebResourceRequest
                               ): Boolean {
+                                  val url = request.url.toString()
+                                  if (isBlockedAdRequest(url)) return true
                                   val scheme = request.url.scheme.orEmpty().lowercase()
                                   return scheme != "http" && scheme != "https"
                               }
 
                               @Suppress("DEPRECATION")
-                              override fun shouldOverrideUrlLoading(
-                                  view: WebView,
-                                  url: String
-                              ): Boolean {
+                              override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
+                                  if (isBlockedAdRequest(url)) return true
                                   val scheme = Uri.parse(url).scheme.orEmpty().lowercase()
                                   return scheme != "http" && scheme != "https"
                               }
 
-                              override fun onPageStarted(
+                              override fun shouldInterceptRequest(
                                   view: WebView,
-                                  url: String,
-                                  favicon: android.graphics.Bitmap?
-                              ) {
+                                  request: WebResourceRequest
+                              ): WebResourceResponse? {
+                                  if (isBlockedAdRequest(request.url.toString())) {
+                                      return WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(ByteArray(0)))
+                                  }
+                                  return super.shouldInterceptRequest(view, request)
+                              }
+
+                              @Suppress("DEPRECATION")
+                              override fun shouldInterceptRequest(view: WebView, url: String): WebResourceResponse? {
+                                  if (isBlockedAdRequest(url)) {
+                                      return WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(ByteArray(0)))
+                                  }
+                                  return super.shouldInterceptRequest(view, url)
+                              }
+
+                              override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
                                   isMusicLoading = true
-                                  musicTitle = Uri.parse(url).host ?: "ListenFree"
+                                  musicTitle = "K Universe"
                               }
 
                               override fun onPageFinished(view: WebView, url: String) {
                                   isMusicLoading = false
-                                  musicTitle = Uri.parse(url).host ?: "ListenFree"
+                                  musicTitle = "K Universe"
+                                  view.evaluateJavascript(AD_CLEANUP_HOOK, null)
+                                  view.evaluateJavascript(MUSIC_BRANDING_HOOK, null)
                               }
                           }
                           loadUrl(MUSIC_SITE_URL)
@@ -3422,44 +3545,29 @@ class MainActivity : ComponentActivity() {
                   modifier = Modifier
                       .fillMaxWidth()
                       .weight(1f)
+                      .padding(horizontal = 10.dp)
               )
 
               Row(
                   modifier = Modifier
                       .fillMaxWidth()
-                      .background(Color(0xFF10261A))
-                      .padding(horizontal = 14.dp, vertical = 8.dp),
-                  verticalAlignment = Alignment.CenterVertically
-              ) {
-                  Text("♪", color = Color(0xFF55E39B), fontSize = 26.sp)
-                  Column(modifier = Modifier.weight(1f).padding(start = 10.dp)) {
-                      Text("ListenFree", color = Color.White, fontWeight = FontWeight.Bold)
-                      Text("Play music inside K-Tele", color = Color(0xFFB9CDBE), style = MaterialTheme.typography.bodySmall)
-                  }
-                  Text("IN APP", color = Color(0xFF8CF5A7), style = MaterialTheme.typography.labelSmall)
-              }
-
-              Row(
-                  modifier = Modifier
-                      .fillMaxWidth()
-                      .background(Color(0xFF08150F))
+                      .background(Color(0xFF101010))
                       .padding(vertical = 4.dp),
                   horizontalArrangement = Arrangement.SpaceEvenly
               ) {
                   TextButton(onClick = { musicWebView?.loadUrl(MUSIC_SITE_URL) }) {
                       Text("⌂  Home", color = Color(0xFF8CF5A7), fontSize = 12.sp)
                   }
-                  TextButton(onClick = { musicWebView?.reload() }) {
-                      Text("⌕  Browse", color = Color(0xFFB9CDBE), fontSize = 12.sp)
+                  TextButton(onClick = { musicWebView?.requestFocus() }) {
+                      Text("⌕  Browse", color = Color(0xFFBDBDBD), fontSize = 12.sp)
                   }
                   TextButton(onClick = { closeMusicBrowser() }) {
-                      Text("‹  Media", color = Color(0xFFB9CDBE), fontSize = 12.sp)
+                      Text("‹  Media", color = Color(0xFFBDBDBD), fontSize = 12.sp)
                   }
               }
           }
       }
-    
-    private fun openMovieSite(url: String) {
+        private fun openMovieSite(url: String) {
         val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
         try {
             startActivity(browserIntent)
