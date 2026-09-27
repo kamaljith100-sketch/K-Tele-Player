@@ -1266,27 +1266,130 @@ private const val MUSIC_BRANDING_HOOK = """
         return String(value || '').replace(brandPattern, 'K-Universe');
     }
 
+    function showMalayalamSongs() {
+        var existing = document.getElementById('__kteleMalayalamPanel');
+        if (existing) {
+            existing.style.display = 'block';
+            return;
+        }
+        var panel = document.createElement('section');
+        panel.id = '__kteleMalayalamPanel';
+        panel.style.cssText = 'position:fixed;inset:0;z-index:2147483000;overflow:auto;background:#080808;color:#fff;padding:22px 16px 80px;box-sizing:border-box;font-family:sans-serif';
+
+        var back = document.createElement('button');
+        back.type = 'button';
+        back.textContent = '‹  Browse Music';
+        back.style.cssText = 'border:0;background:transparent;color:#8cf5a7;font-size:16px;padding:4px 0 18px';
+        back.onclick = function() { panel.style.display = 'none'; };
+        panel.appendChild(back);
+
+        var heading = document.createElement('h2');
+        heading.textContent = 'Malayalam Songs';
+        heading.style.cssText = 'font-size:24px;margin:0 0 4px';
+        panel.appendChild(heading);
+
+        var subtitle = document.createElement('p');
+        subtitle.textContent = 'Malayalam music';
+        subtitle.style.cssText = 'color:#b4d6b8;margin:0 0 18px';
+        panel.appendChild(subtitle);
+
+        var status = document.createElement('p');
+        status.textContent = 'Loading Malayalam songs...';
+        status.style.cssText = 'color:#b4d6b8';
+        panel.appendChild(status);
+        document.body.appendChild(panel);
+
+        fetch('https://music-api.albatross0071.workers.dev/api/search?query=Malayalam')
+            .then(function(response) { return response.json(); })
+            .then(function(payload) {
+                var songs = payload && payload.data && payload.data.songs && payload.data.songs.results || [];
+                status.remove();
+                if (!songs.length) {
+                    var empty = document.createElement('p');
+                    empty.textContent = 'No Malayalam songs found right now.';
+                    empty.style.color = '#b4d6b8';
+                    panel.appendChild(empty);
+                    return;
+                }
+                songs.slice(0, 20).forEach(function(song) {
+                    var row = document.createElement('div');
+                    row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #183021';
+                    var image = document.createElement('img');
+                    var images = song.image || [];
+                    image.src = images.length ? images[images.length - 1].url : '';
+                    image.alt = song.title || 'Malayalam song';
+                    image.style.cssText = 'width:54px;height:54px;object-fit:cover;border-radius:6px;background:#123a23';
+                    row.appendChild(image);
+                    var details = document.createElement('div');
+                    details.style.cssText = 'min-width:0;flex:1';
+                    var title = document.createElement('div');
+                    title.textContent = song.title || 'Malayalam song';
+                    title.style.cssText = 'font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+                    var artist = document.createElement('div');
+                    var artists = song.artists && song.artists.primary || [];
+                    artist.textContent = artists.map(function(item) { return item.name; }).join(', ') || song.artist || 'Malayalam';
+                    artist.style.cssText = 'font-size:12px;color:#b4d6b8;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+                    details.appendChild(title);
+                    details.appendChild(artist);
+                    row.appendChild(details);
+                    panel.appendChild(row);
+                });
+            })
+            .catch(function() {
+                status.textContent = 'Malayalam songs could not be loaded. Please try again.';
+            });
+    }
+
     function configureLanguageSuggestions(root) {
         if (!root || !root.querySelectorAll) return;
-        var languageNodes = {};
+        var native = {};
         root.querySelectorAll('button, [role="button"], a').forEach(function(node) {
+            if (node.closest('#__kteleLanguageBar')) return;
             var label = (node.innerText || node.textContent || '').trim().replace(/\s+/g, ' ');
             if (/^(English|Telugu|Hindi|Tamil)$/i.test(label)) {
-                languageNodes[label.toLowerCase()] = node;
+                native[label.toLowerCase()] = node;
             }
         });
-        if (languageNodes.telugu) {
-            languageNodes.telugu.textContent = 'Malayalam';
-            languageNodes.malayalam = languageNodes.telugu;
-            delete languageNodes.telugu;
+
+        var heading = null;
+        root.querySelectorAll('h1,h2,h3,h4,h5,p,span,div').forEach(function(node) {
+            if (!heading && (node.innerText || node.textContent || '').trim().toLowerCase() === 'home screen suggestions') {
+                heading = node;
+            }
+        });
+        if (!heading) return;
+        var host = heading.parentElement || heading;
+        var bar = document.getElementById('__kteleLanguageBar');
+        if (!bar) {
+            bar = document.createElement('div');
+            bar.id = '__kteleLanguageBar';
+            bar.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;margin-bottom:18px';
+            [
+                { label: 'Malayalam', key: 'malayalam' },
+                { label: 'Tamil', key: 'tamil' },
+                { label: 'Hindi', key: 'hindi' },
+                { label: 'English', key: 'english' }
+            ].forEach(function(language) {
+                var button = document.createElement('button');
+                button.type = 'button';
+                button.textContent = language.label;
+                button.style.cssText = 'border:1px solid #475569;border-radius:18px;background:transparent;color:#e5e7eb;padding:9px 16px;font-size:14px';
+                button.onclick = function() {
+                    if (language.key === 'malayalam') {
+                        showMalayalamSongs();
+                        return;
+                    }
+                    var original = native[language.key];
+                    if (original) original.click();
+                };
+                bar.appendChild(button);
+            });
+            host.appendChild(bar);
         }
-        var ordered = ['malayalam', 'tamil', 'hindi', 'english']
-            .map(function(label) { return languageNodes[label]; })
-            .filter(Boolean);
-        if (ordered.length < 2) return;
-        var parent = ordered[0].parentElement;
-        if (!parent) return;
-        ordered.forEach(function(node) { parent.appendChild(node); });
+
+        Object.keys(native).forEach(function(key) {
+            native[key].style.setProperty('display', 'none', 'important');
+        });
     }
 
     function replaceBranding(root) {
@@ -3867,7 +3970,7 @@ class MainActivity : ComponentActivity() {
                           AppLogo(modifier = Modifier.size(32.dp))
                           Text("Browse Music", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f).padding(start = 10.dp))
                           TextButton(onClick = { musicMode = "library" }) {
-                              Text("Song Search", color = Color(0xFF8CF5A7), fontSize = 12.sp)
+                              Text("Search All Songs", color = Color(0xFF8CF5A7), fontSize = 11.sp)
                           }
                       }
                       AndroidView(
