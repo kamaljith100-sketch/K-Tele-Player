@@ -3824,7 +3824,6 @@ class MainActivity : ComponentActivity() {
         }
         val initialUrl = selectedBrowserUrl ?: "https://www.google.com"
         var urlText by remember(initialUrl) { mutableStateOf(initialUrl) }
-        var searchQuery by remember { mutableStateOf("") }
         var browserStartUrl by remember(initialUrl) { mutableStateOf(initialUrl) }
         var browserHome by remember(initialUrl) { mutableStateOf(selectedBrowserUrl == null) }
         var browserView by remember { mutableStateOf<WebView?>(null) }
@@ -3966,67 +3965,9 @@ class MainActivity : ComponentActivity() {
                     .background(Color(0xFF08080B))
                     .padding(horizontal = 24.dp)
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Image(
-                        painter = painterResource(id = R.drawable.ktele_player_logo),
-                        contentDescription = "K- Univese logo",
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier.size(42.dp)
-                    )
-                    Spacer(modifier = Modifier.size(10.dp))
-                    Text("K- Univese", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.weight(1f))
-                    TextButton(onClick = {
-                        selectedBrowserUrl = null
-                        browserOpen = false
-                    }) { Text("Home") }
-                }
+                Spacer(modifier = Modifier.height(24.dp))
 
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Spacer(modifier = Modifier.height(42.dp))
-                    Image(
-                        painter = painterResource(id = R.drawable.ktele_player_logo),
-                        contentDescription = "K- Univese logo",
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier.size(78.dp)
-                    )
-                    Text("K- Univese", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(24.dp))
-
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = { searchQuery = it },
-                        label = { Text("Search Google") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        trailingIcon = {
-                            TextButton(onClick = { openUrl(searchQuery, null) }) {
-                                Text("Go")
-                            }
-                        }
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        "Torrent വെബ്സൈറ്റിൽ സന്ദർശിക്കുക. .torrent, 🧲 magnet file ക്ലിക്ക് ചെയ്യുക ഡയറക്റ്റ് വീഡിയോ പ്ലേ ചെയ്യുന്നതാണ്.",
-                        color = Color(0xFFB9C2D0),
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Spacer(modifier = Modifier.height(24.dp))
-
-                    Card(modifier = Modifier.fillMaxWidth()) {
+                Card(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -4040,7 +3981,7 @@ class MainActivity : ComponentActivity() {
                             if (bookmarks.isEmpty()) {
                                 Text("No bookmarks yet", style = MaterialTheme.typography.titleMedium)
                                 Text(
-                                    "Search Google and tap Add Bookmark to save it.",
+                                    "Open a page and tap Bookmark to save it.",
                                     color = Color(0xFFB9C2D0)
                                 )
                             } else {
@@ -4065,15 +4006,6 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    TextButton(onClick = { browserHome = true }) { Text("⌂  Home") }
-                    TextButton(onClick = { }) { Text("⇩  Download") }
-                    TextButton(onClick = { }) { Text("✓  Completed") }
-                }
             }
         } else {
             val currentBookmark = urlText.trim()
@@ -4083,38 +4015,8 @@ class MainActivity : ComponentActivity() {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(8.dp)
+                    .padding(0.dp)
             ) {
-                AdaptiveLogo(sizeOverride = 54.dp)
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Button(onClick = {
-                        browserView?.stopLoading()
-                        browserView?.destroy()
-                        browserView = null
-                        selectedBrowserUrl = null
-                        radioOnlyMode = false
-                        browserHome = true
-                    }) {
-                        Text("Home")
-                    }
-                    Spacer(modifier = Modifier.size(8.dp))
-                    OutlinedTextField(
-                        value = urlText,
-                        onValueChange = { urlText = it },
-                        label = { Text("Website or search") },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Spacer(modifier = Modifier.size(8.dp))
-                    Button(onClick = { openUrl(urlText, browserView) }) {
-                        Text("Go")
-                    }
-                }
-
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.Center
@@ -4130,7 +4032,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-            AndroidView(
+                AndroidView(
                 factory = { viewContext ->
                     WebView(viewContext).apply {
                         settings.javaScriptEnabled = true
