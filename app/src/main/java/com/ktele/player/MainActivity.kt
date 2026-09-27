@@ -3127,6 +3127,7 @@ class MainActivity : ComponentActivity() {
                     station = station,
                     isCurrent = selectedStation?.name == station.name,
                     isPlaying = isPlaying,
+                    isLoading = loadingStationName == station.name,
                     onPlayPause = { startStation(station) }
                 )
             }
@@ -3138,6 +3139,7 @@ class MainActivity : ComponentActivity() {
         station: MalayalamRadioStation,
         isCurrent: Boolean,
         isPlaying: Boolean,
+        isLoading: Boolean,
         onPlayPause: () -> Unit
     ) {
         Card(modifier = Modifier.fillMaxWidth()) {
@@ -3168,7 +3170,7 @@ class MainActivity : ComponentActivity() {
                 Button(onClick = onPlayPause) {
                     Text(
                         when {
-                            loadingStationName == station.name -> "Loading"
+                            isLoading -> "Loading"
                             station.streamUrls.isEmpty() -> "Play"
                             isCurrent && isPlaying -> "Pause"
                             else -> "Play"
