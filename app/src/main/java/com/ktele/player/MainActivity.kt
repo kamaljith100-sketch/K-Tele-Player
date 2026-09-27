@@ -1211,6 +1211,21 @@ private const val MUSIC_BRANDING_HOOK = """
             var hasForm = !!node.querySelector('input, textarea, select, audio, video');
             if ((position === 'fixed' || position === 'absolute') && zIndex >= 20 && blur && !hasForm) node.remove();
         });
+
+        // Some pages apply blur to the content container itself instead of using
+        // a removable modal. Clear those styles as well so music cards stay sharp.
+        root.querySelectorAll('*').forEach(function(node) {
+            var style = window.getComputedStyle(node);
+            var hasBlur = (style.filter && style.filter.indexOf('blur') >= 0) ||
+                (style.backdropFilter && style.backdropFilter !== 'none') ||
+                (style.webkitBackdropFilter && style.webkitBackdropFilter !== 'none');
+            if (hasBlur) {
+                node.style.setProperty('filter', 'none', 'important');
+                node.style.setProperty('backdrop-filter', 'none', 'important');
+                node.style.setProperty('-webkit-backdrop-filter', 'none', 'important');
+            }
+        });
+        if (document.documentElement) document.documentElement.style.removeProperty('filter');
         if (document.body) {
             document.body.style.removeProperty('filter');
             document.body.style.removeProperty('overflow');
@@ -1231,18 +1246,30 @@ private const val MUSIC_BRANDING_HOOK = """
     hideNonMusicSections(document.documentElement);
     removeBlockingOverlays(document.documentElement);
     addBrandBadge();
+    var cleanupScheduled = false;
+    function scheduleMusicCleanup() {
+        if (cleanupScheduled) return;
+        cleanupScheduled = true;
+        setTimeout(function() {
+            cleanupScheduled = false;
+            replaceBranding(document.documentElement);
+            hideNonMusicSections(document.documentElement);
+            removeBlockingOverlays(document.documentElement);
+            addBrandBadge();
+        }, 0);
+    }
+
     new MutationObserver(function(records) {
-        records.forEach(function(record) {
-            record.addedNodes.forEach(function(node) {
-                if (node.nodeType === 1) {
-                    replaceBranding(node);
-                    hideNonMusicSections(node);
-                    removeBlockingOverlays(node);
-                }
-            });
+        var hasRelevantChange = records.some(function(record) {
+            return record.type === 'childList' || record.type === 'attributes';
         });
-        addBrandBadge();
-    }).observe(document.documentElement, { childList: true, subtree: true });
+        if (hasRelevantChange) scheduleMusicCleanup();
+    }).observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['class', 'style', 'id', 'aria-hidden']
+    });
 })();
 """
 
