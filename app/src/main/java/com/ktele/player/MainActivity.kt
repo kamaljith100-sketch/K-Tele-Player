@@ -446,6 +446,7 @@ private fun directoryMalayalamRadioStation(
 
 private val malayalamRadioImageOverrides = mapOf(
     "radiosunobahrain.html" to "images/radiosunobh.jpg",
+    "986malayalamradio.html" to "images/986malayalamradio.jpg",
     "ananthapurifm.html" to "images/air.jpg",
     "radiokeralam.html" to "images/radiokeralam.jpg",
     "airmalayalam.html" to "images/air.jpg",
@@ -478,7 +479,8 @@ private val malayalamRadioIgnoredNames = setOf(
 private val malayalamRadioDirectoryFallback = listOf(
     "Suno Bahrain" to "radiosunobahrain.html",
     "Ananthapuri" to "ananthapurifm.html",
-    "Radio Keralam 98.6 FM" to "radiokeralam.html",
+    "Radio Keralam" to "radiokeralam.html",
+    "98.6 FM" to "986malayalamradio.html",
     "Live FM 1072" to "livefm1072.html",
     "Radio Lemon" to "radiolemonlive.html",
     "AIR Kerala" to "airmalayalam.html",
@@ -525,30 +527,48 @@ private suspend fun loadMalayalamRadioDirectory(): List<MalayalamRadioStation> =
             if (connection.responseCode !in 200..299) return@withContext emptyList()
 
             val html = connection.inputStream.bufferedReader().use { it.readText() }
-            val linkPattern = Regex(
-                """<a\b[^>]*href\s*=\s*["']([^"']+\.html?)["'][^>]*>([\s\S]*?)</a>""",
+            // Read each station card as one unit. The directory contains a few
+            // malformed anchors without a closing </a>; matching anchors globally
+            // can then pair one station's link with the next station's image/name.
+            val stationCardPattern = Regex(
+                """<div\b[^>]*class\s*=\s*["'][^"']*grid_1_of_2[^"']*["'][^>]*>([\s\S]*?)</div>""",
+                RegexOption.IGNORE_CASE
+            )
+            val stationLinkPattern = Regex(
+                """<a\b[^>]*href\s*=\s*["']([^"']+\.html?)["']""",
+                RegexOption.IGNORE_CASE
+            )
+            val stationNamePattern = Regex(
+                """<p\b[^>]*>([\s\S]*?)</p>""",
+                RegexOption.IGNORE_CASE
+            )
+            val stationImagePattern = Regex(
+                """<img\b[^>]*(?:src|data-src|data-lazy-src)\s*=\s*["']([^"']+)["']""",
                 RegexOption.IGNORE_CASE
             )
             val seenUrls = malayalamRadioStations
                 .mapNotNull { it.pageUrl }
                 .toMutableSet()
 
-            linkPattern.findAll(html).mapNotNull { match ->
-                val pageUrl = resolveMalayalamRadioUrl(match.groupValues[1])
-                val rawLabel = match.groupValues[2]
-                val name = cleanMalayalamRadioStationName(rawLabel).ifBlank {
-                    Regex("""(?:alt|title)\s*=\s*["']([^"']+)["']""")
-                        .find(rawLabel)
+            stationCardPattern.findAll(html).mapNotNull { match ->
+                val cardHtml = match.groupValues[1]
+                val href = stationLinkPattern.find(cardHtml)
+                    ?.groupValues
+                    ?.getOrNull(1)
+                    ?: return@mapNotNull null
+                val pageUrl = resolveMalayalamRadioUrl(href)
+                val imagePath = stationImagePattern.find(cardHtml)
+                    ?.groupValues
+                    ?.getOrNull(1)
+                val rawName = stationNamePattern.find(cardHtml)
+                    ?.groupValues
+                    ?.getOrNull(1)
+                    ?: Regex("""(?:alt|title)\s*=\s*["']([^"']+)["']""")
+                        .find(cardHtml)
                         ?.groupValues
                         ?.getOrNull(1)
-                        ?.let(::cleanMalayalamRadioStationName)
-                        .orEmpty()
-                }
+                val name = rawName?.let(::cleanMalayalamRadioStationName).orEmpty()
                 val lowerName = name.lowercase()
-                val imagePath = Regex(
-                    """<img\b[^>]*(?:src|data-src|data-lazy-src)\s*=\s*["']([^"']+)["']""",
-                    RegexOption.IGNORE_CASE
-                ).find(rawLabel)?.groupValues?.getOrNull(1)
                 if (
                     name.isBlank() ||
                     lowerName in malayalamRadioNavigationNames ||
