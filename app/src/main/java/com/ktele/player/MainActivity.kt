@@ -817,6 +817,7 @@ private const val VIDEO_MAX_BUFFER_MS = 40_000
 private const val VIDEO_START_BUFFER_MS = 500
 private const val VIDEO_REBUFFER_BUFFER_MS = 1_000
 private const val FALLBACK_START_COUNTDOWN_SECONDS = 3L
+private const val TORRENT_PREPARE_BYTES = 512L * 1024L
 
 // Use a small first range for quick startup, then larger ranges for throughput.
 private const val TELEGRAM_STREAM_INITIAL_CHUNK_BYTES = 256L * 1024L
@@ -1084,7 +1085,8 @@ private const val TORRENT_LINK_HOOK = """
     document.addEventListener('click', function(event) {
         var node = event.target.closest && event.target.closest('a,button,[data-href],[data-url]');
         if (!node) return;
-        var link = node.getAttribute('href') || node.getAttribute('data-href') || node.getAttribute('data-url') || node.href || '';
+        var rawLink = node.getAttribute('href') || node.getAttribute('data-href') || node.getAttribute('data-url') || '';
+        var link = rawLink.toLowerCase().indexOf('magnet:') === 0 ? rawLink : (node.href || rawLink);
         var lowerLink = link.toLowerCase();
         if (link && (lowerLink.indexOf('magnet:') === 0 || lowerLink.indexOf('.torrent') >= 0 || lowerLink.indexOf('intent://') === 0)) {
             event.preventDefault();
@@ -1336,17 +1338,21 @@ class MainActivity : ComponentActivity() {
                 .removeFilesAfterStop(false)
                 .maxConnections(500)
                 .maxActiveDHT(200)
-                .prepareSize(2L * 1024L * 1024L)
+                // Start playback after a small initial buffer. TorrentDataSource
+                // will request the following pieces as ExoPlayer advances.
+                .prepareSize(TORRENT_PREPARE_BYTES)
                 .build()
 
             torrentStream = TorrentStream.init(options).also { stream ->
                 stream.addListener(object : TorrentListener {
                     override fun onStreamPrepared(torrent: Torrent?) {
+                        torrent?.setInterestedBytes(0L)
                     }
 
                     override fun onStreamStarted(torrent: Torrent?) {
                         torrentPreparing = true
                         torrentError = ""
+                        torrent?.setInterestedBytes(0L)
                     }
 
                     override fun onStreamError(torrent: Torrent?, e: Exception?) {
