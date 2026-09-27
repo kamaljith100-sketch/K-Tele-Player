@@ -243,6 +243,7 @@ private val kTeleColorScheme = darkColorScheme(
 
 
 private const val MALAYALAM_RADIO_URL = "https://radiosindia.com/malayalamradio.html"
+private const val MUSIC_SITE_URL = "https://listenfree.in/"
 
 private val MALAYALAM_RADIO_STREAM_EXTENSIONS = listOf(
     ".mp3", ".aac", ".m3u8", ".m3u", ".pls", ".ogg", ".wav", ".flac"
@@ -1222,6 +1223,7 @@ class MainActivity : ComponentActivity() {
     private var playing by mutableStateOf<VideoItem?>(null)
 
     private var browserOpen by mutableStateOf(false)
+    private var musicBrowserOpen by mutableStateOf(false)
     private var selectedBrowserUrl by mutableStateOf<String?>(null)
     private var radioOnlyMode by mutableStateOf(false)
     private var malayalamRadioOpen by mutableStateOf(false)
@@ -1861,6 +1863,7 @@ class MainActivity : ComponentActivity() {
             homeOpen -> HomeScreen()
             menuOpen -> MainMenuScreen()
             mediaHubOpen -> MediaHubScreen()
+            musicBrowserOpen -> MusicBrowserScreen()
             malayalamRadioOpen -> MalayalamRadioScreen()
             telegramLoginOpen -> TelegramLoginScreen()
             browserOpen -> {
@@ -3284,6 +3287,178 @@ class MainActivity : ComponentActivity() {
         browserOpen = true
     }
 
+    private fun openMusicInAppBrowser() {
+        homeOpen = false
+        menuOpen = false
+        mediaHubOpen = false
+        settingsOpen = false
+        iptvOpen = false
+        browserOpen = false
+        musicBrowserOpen = true
+    }
+
+
+      @Composable
+      private fun MusicBrowserScreen() {
+            var musicWebView by remember { mutableStateOf<WebView?>(null) }
+          var musicTitle by remember { mutableStateOf("ListenFree") }
+          var isMusicLoading by remember { mutableStateOf(true) }
+
+          fun closeMusicBrowser() {
+              musicWebView?.stopLoading()
+              musicWebView?.destroy()
+              musicWebView = null
+              musicBrowserOpen = false
+              mediaHubOpen = true
+          }
+
+          BackHandler {
+              val view = musicWebView
+              if (view?.canGoBack() == true) {
+                  view.goBack()
+              } else {
+                  closeMusicBrowser()
+              }
+          }
+
+          DisposableEffect(Unit) {
+              onDispose {
+                  musicWebView?.stopLoading()
+                  musicWebView?.destroy()
+              }
+          }
+
+          Column(
+              modifier = Modifier
+                  .fillMaxSize()
+                  .background(Color(0xFF07110E))
+          ) {
+              Row(
+                  modifier = Modifier
+                      .fillMaxWidth()
+                      .background(Color(0xFF0D2117))
+                      .padding(horizontal = 10.dp, vertical = 8.dp),
+                  verticalAlignment = Alignment.CenterVertically
+              ) {
+                  TextButton(onClick = { closeMusicBrowser() }) {
+                      Text("‹", color = Color(0xFFE8FFF0), fontSize = 30.sp)
+                  }
+                  Column(modifier = Modifier.weight(1f)) {
+                      Text(
+                          "Music",
+                          color = Color(0xFF8CF5A7),
+                          style = MaterialTheme.typography.titleLarge,
+                          fontWeight = FontWeight.Bold
+                      )
+                      Text(
+                          musicTitle,
+                          color = Color(0xFFB9CDBE),
+                          style = MaterialTheme.typography.bodySmall,
+                          maxLines = 1
+                      )
+                  }
+                  TextButton(onClick = { musicWebView?.reload() }) {
+                      Text("↻", color = Color(0xFFE8FFF0), fontSize = 22.sp)
+                  }
+              }
+
+              if (isMusicLoading) {
+                  Text(
+                      "Loading music...",
+                      color = Color(0xFF8CF5A7),
+                      modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp)
+                  )
+              }
+
+              AndroidView(
+                  factory = { viewContext ->
+                      WebView(viewContext).apply {
+                          setBackgroundColor(android.graphics.Color.rgb(8, 12, 10))
+                          settings.javaScriptEnabled = true
+                          settings.domStorageEnabled = true
+                          settings.javaScriptCanOpenWindowsAutomatically = false
+                          settings.setSupportMultipleWindows(false)
+                          settings.mediaPlaybackRequiresUserGesture = false
+                          settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+                          settings.allowContentAccess = true
+                          settings.allowFileAccess = true
+                          webChromeClient = WebChromeClient()
+                          webViewClient = object : WebViewClient() {
+                              override fun shouldOverrideUrlLoading(
+                                  view: WebView,
+                                  request: WebResourceRequest
+                              ): Boolean {
+                                  val scheme = request.url.scheme.orEmpty().lowercase()
+                                  return scheme != "http" && scheme != "https"
+                              }
+
+                              @Suppress("DEPRECATION")
+                              override fun shouldOverrideUrlLoading(
+                                  view: WebView,
+                                  url: String
+                              ): Boolean {
+                                  val scheme = Uri.parse(url).scheme.orEmpty().lowercase()
+                                  return scheme != "http" && scheme != "https"
+                              }
+
+                              override fun onPageStarted(
+                                  view: WebView,
+                                  url: String,
+                                  favicon: android.graphics.Bitmap?
+                              ) {
+                                  isMusicLoading = true
+                                  musicTitle = Uri.parse(url).host ?: "ListenFree"
+                              }
+
+                              override fun onPageFinished(view: WebView, url: String) {
+                                  isMusicLoading = false
+                                  musicTitle = Uri.parse(url).host ?: "ListenFree"
+                              }
+                          }
+                          loadUrl(MUSIC_SITE_URL)
+                          musicWebView = this
+                      }
+                  },
+                  modifier = Modifier
+                      .fillMaxWidth()
+                      .weight(1f)
+              )
+
+              Row(
+                  modifier = Modifier
+                      .fillMaxWidth()
+                      .background(Color(0xFF10261A))
+                      .padding(horizontal = 14.dp, vertical = 8.dp),
+                  verticalAlignment = Alignment.CenterVertically
+              ) {
+                  Text("♪", color = Color(0xFF55E39B), fontSize = 26.sp)
+                  Column(modifier = Modifier.weight(1f).padding(start = 10.dp)) {
+                      Text("ListenFree", color = Color.White, fontWeight = FontWeight.Bold)
+                      Text("Play music inside K-Tele", color = Color(0xFFB9CDBE), style = MaterialTheme.typography.bodySmall)
+                  }
+                  Text("IN APP", color = Color(0xFF8CF5A7), style = MaterialTheme.typography.labelSmall)
+              }
+
+              Row(
+                  modifier = Modifier
+                      .fillMaxWidth()
+                      .background(Color(0xFF08150F))
+                      .padding(vertical = 4.dp),
+                  horizontalArrangement = Arrangement.SpaceEvenly
+              ) {
+                  TextButton(onClick = { musicWebView?.loadUrl(MUSIC_SITE_URL) }) {
+                      Text("⌂  Home", color = Color(0xFF8CF5A7), fontSize = 12.sp)
+                  }
+                  TextButton(onClick = { musicWebView?.reload() }) {
+                      Text("⌕  Browse", color = Color(0xFFB9CDBE), fontSize = 12.sp)
+                  }
+                  TextButton(onClick = { closeMusicBrowser() }) {
+                      Text("‹  Media", color = Color(0xFFB9CDBE), fontSize = 12.sp)
+                  }
+              }
+          }
+      }
+    
     private fun openMovieSite(url: String) {
         val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
         try {
@@ -3549,7 +3724,7 @@ class MainActivity : ComponentActivity() {
                         color = Color(0xFFB9C2D0)
                     )
                     Spacer(modifier = Modifier.height(14.dp))
-                    Button(onClick = { openMovieSite("https://listenfree.in/") }) {
+                    Button(onClick = { openMusicInAppBrowser() }) {
                         Text("Open Music")
                     }
                 }
