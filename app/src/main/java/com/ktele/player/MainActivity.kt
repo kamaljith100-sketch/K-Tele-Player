@@ -378,7 +378,8 @@ private val malayalamRadioStations = listOf(
         streamUrls = listOf(
             "https://stream.aiir.com/dbv0rxpwp6ytv",
             "https://sp14.instainternet.com/8050/stream"
-        )
+        ),
+        pageUrl = "https://radiosindia.com/radiomirchimalayalam.html"
     ),
     MalayalamRadioStation(
         name = "Club FM",
@@ -387,7 +388,8 @@ private val malayalamRadioStations = listOf(
         streamUrls = listOf(
             "https://listen.openstream.co/4635/audio",
             "https://listen.openstream.co/4626/audio"
-        )
+        ),
+        pageUrl = "https://radiosindia.com/clubfm.html"
     ),
     MalayalamRadioStation(
         name = "Radio Mango",
@@ -396,19 +398,22 @@ private val malayalamRadioStations = listOf(
         streamUrls = listOf(
             "https://stream.radiomango.fm/live",
             "https://radiomangoalive1-a.akamaihd.net/9268677ef77949a9b21d33239a55eadd/ap-southeast-1/6034685947001/playlist.m3u8"
-        )
+        ),
+        pageUrl = "https://radiosindia.com/radiomango.html"
     ),
     MalayalamRadioStation(
         name = "Radio Suno",
         frequency = "91.7 FM",
         imageUrl = "https://radiosindia.com/images/radiosuno.jpg",
-        streamUrls = listOf("https://playerservices.streamtheworld.com/api/livestream-redirect/SUNO917_SC")
+        streamUrls = listOf("https://playerservices.streamtheworld.com/api/livestream-redirect/SUNO917_SC"),
+        pageUrl = "https://radiosindia.com/radiosunomalayalam.html"
     ),
     MalayalamRadioStation(
         name = "Home FM",
         frequency = "Online radio",
         imageUrl = "https://radiosindia.com/images/homefm.jpg",
-        streamUrls = listOf("https://centova.aarenworld.com/proxy/922radiokhushi/stream")
+        streamUrls = listOf("https://centova.aarenworld.com/proxy/922radiokhushi/stream"),
+        pageUrl = "https://radiosindia.com/homefm.html"
     )
 )
 
@@ -434,11 +439,38 @@ private fun cleanMalayalamRadioStationName(rawName: String): String =
 
 private fun resolveMalayalamRadioUrl(rawUrl: String): String {
     val trimmed = rawUrl.trim()
-    return if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-        trimmed
-    } else {
-        "https://radiosindia.com/${trimmed.trimStart('/')}"
+    return when {
+        trimmed.startsWith("http://", ignoreCase = true) ||
+            trimmed.startsWith("https://", ignoreCase = true) -> trimmed
+        trimmed.startsWith("//") -> "https:$trimmed"
+        else -> "https://radiosindia.com/${trimmed.trimStart('/')}"
     }
+}
+
+private fun splitMalayalamRadioStreamCandidates(rawValue: String): List<String> =
+    rawValue
+        .replace("&amp;", "&", ignoreCase = true)
+        .replace("&#39;", "'", ignoreCase = true)
+        .replace("&quot;", "\"", ignoreCase = true)
+        .split(Regex("""\s+or\s+|\s*\|\s*""", RegexOption.IGNORE_CASE))
+        .map { it.trim().trimEnd('.', ',', ';', ')', ']', '}') }
+        .filter { it.startsWith("http://", ignoreCase = true) || it.startsWith("https://", ignoreCase = true) }
+        .distinct()
+
+private fun isDirectMalayalamRadioStreamUrl(rawUrl: String): Boolean {
+    val uri = runCatching { Uri.parse(rawUrl) }.getOrNull() ?: return false
+    val host = uri.host?.lowercase() ?: return false
+    if (!uri.scheme.equals("http", ignoreCase = true) &&
+        !uri.scheme.equals("https", ignoreCase = true)
+    ) return false
+    if (host == "radiosindia.com" || host == "www.radiosindia.com") return false
+
+    val path = uri.path?.lowercase().orEmpty()
+    val webAssetExtensions = listOf(
+        ".html", ".htm", ".php", ".css", ".js", ".jpg", ".jpeg", ".png",
+        ".gif", ".webp", ".svg", ".woff", ".woff2", ".ttf", ".ico"
+    )
+    return webAssetExtensions.none { path.endsWith(it) }
 }
 
 private fun directoryMalayalamRadioStation(
@@ -449,9 +481,29 @@ private fun directoryMalayalamRadioStation(
     name = name,
     frequency = "Online radio",
     imageUrl = imagePath?.let(::resolveMalayalamRadioUrl)
-        ?: "https://radiosindia.com/images/malayalamradio.jpg",
+        ?: resolveMalayalamRadioUrl(
+            malayalamRadioImageOverrides[pagePath.substringAfterLast('/')]
+                ?: "images/${pagePath.substringAfterLast('/').substringBeforeLast('.')}.jpg"
+        ),
     streamUrls = emptyList(),
     pageUrl = resolveMalayalamRadioUrl(pagePath)
+)
+
+private val malayalamRadioImageOverrides = mapOf(
+    "radiosunobahrain.html" to "images/radiosunobh.jpg",
+    "ananthapurifm.html" to "images/air.jpg",
+    "radiokeralam.html" to "images/radiokeralam.jpg",
+    "airmalayalam.html" to "images/air.jpg",
+    "kochifm.html" to "images/air.jpg",
+    "airdevikulam.html" to "images/air.jpg",
+    "airkozhikodefm.html" to "images/airkozhikodefm.jpg",
+    "radio90fm.html" to "images/radio90fm1.jpg",
+    "radiokerala.html" to "images/keralaradio1.jpg",
+    "airkannur.html" to "images/airkannurfm.jpg",
+    "manjerifm.html" to "images/air.jpg",
+    "akashvanithrissur.html" to "images/airthrissur.jpg",
+    "aahafmradio.html" to "images/aahafm.jpg",
+    "junefm.html" to "images/junefm.webp"
 )
 
 private val malayalamRadioIgnoredNames = setOf(
@@ -539,7 +591,7 @@ private suspend fun loadMalayalamRadioDirectory(): List<MalayalamRadioStation> =
                 }
                 val lowerName = name.lowercase()
                 val imagePath = Regex(
-                    """<img\b[^>]*\bsrc\s*=\s*["']([^"']+)["']""",
+                    """<img\b[^>]*(?:src|data-src|data-lazy-src)\s*=\s*["']([^"']+)["']""",
                     RegexOption.IGNORE_CASE
                 ).find(rawLabel)?.groupValues?.getOrNull(1)
                 if (
@@ -580,29 +632,41 @@ private suspend fun loadMalayalamRadioStationStreams(
 
         val html = connection.inputStream.bufferedReader().use { it.readText() }
         val candidates = mutableListOf<String>()
-        val absoluteUrlPattern = Regex("""https?://[^\s"'<>]+""", RegexOption.IGNORE_CASE)
-        candidates += absoluteUrlPattern.findAll(html).map { it.value }.toList()
 
-        val mediaAttributePattern = Regex(
-            """(?:src|data-src|file|url|streamUrl)\s*[:=]\s*["']([^"']+)["']""",
+        // RadiosIndia uses Playerjs and stores several fallback streams in one
+        // value separated by "or". Keep each URL separate so ExoPlayer can try
+        // the next stream when the first provider is offline.
+        val directValuePattern = Regex(
+            """(?:file|contentUrl|urlTemplate|streamUrl)\s*["']?\s*[:=]\s*["']([^"']+)["']""",
             RegexOption.IGNORE_CASE
         )
-        candidates += mediaAttributePattern.findAll(html).map { match ->
-            resolveMalayalamRadioUrl(match.groupValues[1])
-        }.toList()
+        directValuePattern.findAll(html).forEach { match ->
+            candidates += splitMalayalamRadioStreamCandidates(match.groupValues[1])
+        }
+
+        val mediaSourcePattern = Regex(
+            """<(?:audio|source)\b[^>]*(?:src|data-src)\s*=\s*["']([^"']+)["']""",
+            RegexOption.IGNORE_CASE
+        )
+        mediaSourcePattern.findAll(html).forEach { match ->
+            candidates += splitMalayalamRadioStreamCandidates(
+                resolveMalayalamRadioUrl(match.groupValues[1])
+            )
+        }
+
+        // Also support pages that expose a stream as a plain absolute URL.
+        val absoluteUrlPattern = Regex("""https?://[^\s"'<>]+""", RegexOption.IGNORE_CASE)
+        candidates += absoluteUrlPattern
+            .findAll(html)
+            .map { it.value.trimEnd('.', ',', ';', ')', ']', '}') }
+            .filter(::isMalayalamRadioStreamUrl)
+            .toList()
 
         candidates
             .asSequence()
-            .map { it.trimEnd('.', ',', ';', ')', ']', '}') }
-            .filter { candidate ->
-                val host = runCatching { Uri.parse(candidate).host?.lowercase() }.getOrNull()
-                host != null &&
-                    host != "radiosindia.com" &&
-                    host != "www.radiosindia.com" &&
-                    isMalayalamRadioStreamUrl(candidate)
-            }
+            .filter(::isDirectMalayalamRadioStreamUrl)
             .distinct()
-            .take(3)
+            .take(5)
             .toList()
     } catch (_: Exception) {
         emptyList()
