@@ -4404,6 +4404,9 @@ class MainActivity : ComponentActivity() {
                   }
               }
 
+               else -> {
+                   // The Liked Songs library page was removed.
+               }
           }
       }
         private fun openMovieSite(url: String) {
