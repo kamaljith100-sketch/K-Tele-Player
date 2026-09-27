@@ -303,6 +303,9 @@ private data class MalayalamRadioStation(
     val pageUrl: String? = null
 )
 
+private fun malayalamRadioFavoriteKey(station: MalayalamRadioStation): String =
+    station.pageUrl ?: "${station.name}|${station.frequency}"
+
 private val malayalamRadioStations = listOf(
     MalayalamRadioStation(
         name = "Mirchi Kochi",
@@ -2675,7 +2678,37 @@ class MainActivity : ComponentActivity() {
         var isPlaying by remember { mutableStateOf(false) }
         var radioError by remember { mutableStateOf("") }
         var loadingStationName by remember { mutableStateOf<String?>(null) }
+        var searchQuery by remember { mutableStateOf("") }
+        var favoritesOnly by remember { mutableStateOf(false) }
+        val favoritePreferences = remember(context) {
+            context.getSharedPreferences("malayalam_radio_favorites", Context.MODE_PRIVATE)
+        }
+        var favoriteKeys by remember(favoritePreferences) {
+            mutableStateOf(
+                favoritePreferences.getStringSet("station_keys", emptySet())?.toSet().orEmpty()
+            )
+        }
         val scope = rememberCoroutineScope()
+
+        fun toggleFavorite(station: MalayalamRadioStation) {
+            val key = malayalamRadioFavoriteKey(station)
+            favoriteKeys = if (favoriteKeys.contains(key)) {
+                favoriteKeys - key
+            } else {
+                favoriteKeys + key
+            }
+            favoritePreferences.edit().putStringSet("station_keys", favoriteKeys).apply()
+        }
+
+        val normalizedSearchQuery = searchQuery.trim().lowercase()
+        val visibleStations = stations.filter { station ->
+            val searchableText = "${station.name} ${station.frequency}".lowercase()
+            val matchesSearch = normalizedSearchQuery.isEmpty() ||
+                searchableText.contains(normalizedSearchQuery)
+            val matchesFavorites = !favoritesOnly ||
+                favoriteKeys.contains(malayalamRadioFavoriteKey(station))
+            matchesSearch && matchesFavorites
+        }
 
         LaunchedEffect(Unit) {
             val discoveredStations = loadMalayalamRadioDirectory()
@@ -2837,6 +2870,24 @@ class MainActivity : ComponentActivity() {
             }
 
             item {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Search radio stations") },
+                        singleLine = true
+                    )
+                    TextButton(
+                        onClick = { favoritesOnly = !favoritesOnly },
+                        modifier = Modifier.align(Alignment.End)
+                    ) {
+                        Text(if (favoritesOnly) "All Stations" else "Favorites")
+                    }
+                }
+            }
+
+            item {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(ui.cardPadding)) {
                         Text(
@@ -2857,14 +2908,30 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            items(stations, key = { it.pageUrl ?: it.name }) { station ->
-                MalayalamRadioStationCard(
-                    station = station,
-                    isCurrent = selectedStation?.name == station.name,
-                    isPlaying = isPlaying,
-                    isLoading = loadingStationName == station.name,
-                    onPlayPause = { startStation(station) }
-                )
+            if (visibleStations.isEmpty()) {
+                item {
+                    Text(
+                        if (favoritesOnly) {
+                            "No favorite radio stations yet. Tap ☆ on a station to save it."
+                        } else {
+                            "No radio stations match \"$searchQuery\"."
+                        },
+                        color = Color(0xFFB9C2D0),
+                        modifier = Modifier.padding(vertical = 12.dp)
+                    )
+                }
+            } else {
+                items(visibleStations, key = { it.pageUrl ?: it.name }) { station ->
+                    MalayalamRadioStationCard(
+                        station = station,
+                        isCurrent = selectedStation?.name == station.name,
+                        isPlaying = isPlaying,
+                        isLoading = loadingStationName == station.name,
+                        isFavorite = favoriteKeys.contains(malayalamRadioFavoriteKey(station)),
+                        onPlayPause = { startStation(station) },
+                        onToggleFavorite = { toggleFavorite(station) }
+                    )
+                }
             }
         }
     }
@@ -2875,7 +2942,9 @@ class MainActivity : ComponentActivity() {
         isCurrent: Boolean,
         isPlaying: Boolean,
         isLoading: Boolean,
-        onPlayPause: () -> Unit
+        isFavorite: Boolean,
+        onPlayPause: () -> Unit,
+        onToggleFavorite: () -> Unit
     ) {
         Card(modifier = Modifier.fillMaxWidth()) {
             Row(
@@ -2902,15 +2971,26 @@ class MainActivity : ComponentActivity() {
                         Text("Playing now", color = Color(0xFF55E39B), style = MaterialTheme.typography.bodySmall)
                     }
                 }
-                Button(onClick = onPlayPause) {
-                    Text(
-                        when {
-                            isLoading -> "Loading"
-                            station.streamUrls.isEmpty() -> "Play"
-                            isCurrent && isPlaying -> "Pause"
-                            else -> "Play"
-                        }
-                    )
+                Column(horizontalAlignment = Alignment.End) {
+                    TextButton(
+                        onClick = onToggleFavorite,
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                    ) {
+                        Text(
+                            if (isFavorite) "★ Favorite" else "☆ Favorite",
+                            color = if (isFavorite) Color(0xFFFFD54F) else Color(0xFFB9C2D0)
+                        )
+                    }
+                    Button(onClick = onPlayPause) {
+                        Text(
+                            when {
+                                isLoading -> "Loading"
+                                station.streamUrls.isEmpty() -> "Play"
+                                isCurrent && isPlaying -> "Pause"
+                                else -> "Play"
+                            }
+                        )
+                    }
                 }
             }
         }
