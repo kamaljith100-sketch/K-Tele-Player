@@ -1124,10 +1124,37 @@ private const val AD_CLEANUP_HOOK = """
         }
     }
 
+    function removeAdLabeledSections(root) {
+        if (!root || !root.querySelectorAll) return;
+        root.querySelectorAll('h1, h2, h3, h4, h5, p, span, div').forEach(function(label) {
+            var text = (label.innerText || label.textContent || '').trim().replace(/ +/g, ' ');
+            if (!/^advertisements?$/i.test(text)) return;
+
+            var target = label;
+            for (var depth = 0; depth < 4 && target.parentElement; depth++) {
+                var candidate = target.parentElement;
+                var candidateText = (candidate.innerText || candidate.textContent || '').trim().replace(/ +/g, ' ');
+                var candidateStyle = window.getComputedStyle(candidate);
+                var rect = candidate.getBoundingClientRect();
+                var markerText = (candidate.id || '') + ' ' + String(candidate.className || '');
+                var isAdContainer = markerPattern.test(markerText);
+                var isLargeAdBlock = rect.width > Math.max(240, window.innerWidth * 0.65) &&
+                    rect.height > 100 && candidateText.length <= 160;
+                if (isAdContainer || isLargeAdBlock || candidateStyle.position === 'absolute') {
+                    target = candidate;
+                } else {
+                    break;
+                }
+            }
+            target.style.setProperty('display', 'none', 'important');
+        });
+    }
+
     function cleanAds(root) {
         if (!root || !root.querySelectorAll) return;
         hideIfAd(root);
         root.querySelectorAll('iframe, ins, img, script, [id], [class]').forEach(hideIfAd);
+        removeAdLabeledSections(root);
     }
 
     cleanAds(document.documentElement);
