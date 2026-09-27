@@ -443,13 +443,29 @@ private fun resolveMalayalamRadioUrl(rawUrl: String): String {
 
 private fun directoryMalayalamRadioStation(
     name: String,
-    pagePath: String
+    pagePath: String,
+    imagePath: String? = null
 ): MalayalamRadioStation = MalayalamRadioStation(
     name = name,
     frequency = "Online radio",
-    imageUrl = "https://radiosindia.com/images/malayalamradio.jpg",
+    imageUrl = imagePath?.let(::resolveMalayalamRadioUrl)
+        ?: "https://radiosindia.com/images/malayalamradio.jpg",
     streamUrls = emptyList(),
     pageUrl = resolveMalayalamRadioUrl(pagePath)
+)
+
+private val malayalamRadioIgnoredNames = setOf(
+    "about",
+    "about us",
+    "help / faq",
+    "add radio",
+    "contact us",
+    "facebook",
+    "twitter",
+    "terms of use",
+    "privacy policy",
+    "report abuse/dmca",
+    "legal"
 )
 
 private val malayalamRadioDirectoryFallback = listOf(
@@ -522,15 +538,20 @@ private suspend fun loadMalayalamRadioDirectory(): List<MalayalamRadioStation> =
                         .orEmpty()
                 }
                 val lowerName = name.lowercase()
+                val imagePath = Regex(
+                    """<img\b[^>]*\bsrc\s*=\s*["']([^"']+)["']""",
+                    RegexOption.IGNORE_CASE
+                ).find(rawLabel)?.groupValues?.getOrNull(1)
                 if (
                     name.isBlank() ||
                     lowerName in malayalamRadioNavigationNames ||
+                    lowerName in malayalamRadioIgnoredNames ||
                     pageUrl == MALAYALAM_RADIO_URL ||
                     !seenUrls.add(pageUrl)
                 ) {
                     null
                 } else {
-                    directoryMalayalamRadioStation(name, pageUrl)
+                    directoryMalayalamRadioStation(name, pageUrl, imagePath)
                 }
             }.toList()
         } catch (_: Exception) {
@@ -539,6 +560,56 @@ private suspend fun loadMalayalamRadioDirectory(): List<MalayalamRadioStation> =
             connection.disconnect()
         }
     }
+
+private suspend fun loadMalayalamRadioStationStreams(
+    pageUrl: String
+): List<String> = withContext(Dispatchers.IO) {
+    val connection = URL(pageUrl).openConnection() as? HttpURLConnection
+        ?: return@withContext emptyList()
+
+    try {
+        connection.connectTimeout = 15_000
+        connection.readTimeout = 30_000
+        connection.instanceFollowRedirects = true
+        connection.setRequestProperty(
+            "User-Agent",
+            IPTV_DEFAULT_USER_AGENT
+        )
+        connection.connect()
+        if (connection.responseCode !in 200..299) return@withContext emptyList()
+
+        val html = connection.inputStream.bufferedReader().use { it.readText() }
+        val candidates = mutableListOf<String>()
+        val absoluteUrlPattern = Regex("""https?://[^\s"'<>]+""", RegexOption.IGNORE_CASE)
+        candidates += absoluteUrlPattern.findAll(html).map { it.value }.toList()
+
+        val mediaAttributePattern = Regex(
+            """(?:src|data-src|file|url|streamUrl)\s*[:=]\s*["']([^"']+)["']""",
+            RegexOption.IGNORE_CASE
+        )
+        candidates += mediaAttributePattern.findAll(html).map { match ->
+            resolveMalayalamRadioUrl(match.groupValues[1])
+        }.toList()
+
+        candidates
+            .asSequence()
+            .map { it.trimEnd('.', ',', ';', ')', ']', '}') }
+            .filter { candidate ->
+                val host = runCatching { Uri.parse(candidate).host?.lowercase() }.getOrNull()
+                host != null &&
+                    host != "radiosindia.com" &&
+                    host != "www.radiosindia.com" &&
+                    isMalayalamRadioStreamUrl(candidate)
+            }
+            .distinct()
+            .take(3)
+            .toList()
+    } catch (_: Exception) {
+        emptyList()
+    } finally {
+        connection.disconnect()
+    }
+}
 
 private const val DEFAULT_IPTV_PLAYLIST_URL = "https://iptv-org.github.io/iptv/index.m3u"
 private const val IPTV_DEFAULT_USER_AGENT =
@@ -2781,11 +2852,13 @@ class MainActivity : ComponentActivity() {
         var streamIndex by remember { mutableStateOf(0) }
         var isPlaying by remember { mutableStateOf(false) }
         var radioError by remember { mutableStateOf("") }
+        var loadingStationName by remember { mutableStateOf<String?>(null) }
+        val scope = rememberCoroutineScope()
 
         LaunchedEffect(Unit) {
             val discoveredStations = loadMalayalamRadioDirectory()
             stations = malayalamRadioStations +
-                (malayalamRadioDirectoryFallback + discoveredStations)
+                (discoveredStations + malayalamRadioDirectoryFallback)
                     .distinctBy { it.pageUrl ?: it.name }
             directoryLoading = false
         }
@@ -2802,9 +2875,32 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        fun playStation(station: MalayalamRadioStation) {
+            selectedStation = station
+            streamIndex = 0
+            radioError = ""
+            player.setMediaItem(buildMalayalamRadioMediaItem(station, streamIndex))
+            player.prepare()
+            player.play()
+            isPlaying = true
+        }
+
         fun startStation(station: MalayalamRadioStation) {
             if (station.streamUrls.isEmpty()) {
-                station.pageUrl?.let { openInAppBrowser(it, radioOnly = true) }
+                if (loadingStationName == station.name) return
+                val pageUrl = station.pageUrl ?: return
+                loadingStationName = station.name
+                radioError = ""
+                scope.launch {
+                    val streams = loadMalayalamRadioStationStreams(pageUrl)
+                    loadingStationName = null
+                    if (streams.isEmpty()) {
+                        radioError =
+                            "${station.name} stream കണ്ടെത്താനായില്ല. വീണ്ടും Play അമർത്തൂ."
+                    } else {
+                        playStation(station.copy(streamUrls = streams))
+                    }
+                }
                 return
             }
 
@@ -2820,13 +2916,7 @@ class MainActivity : ComponentActivity() {
                 radioError = ""
                 return
             }
-            selectedStation = station
-            streamIndex = 0
-            radioError = ""
-            player.setMediaItem(buildMalayalamRadioMediaItem(station, streamIndex))
-            player.prepare()
-            player.play()
-            isPlaying = true
+            playStation(station)
         }
 
         DisposableEffect(player) {
@@ -2984,7 +3074,8 @@ class MainActivity : ComponentActivity() {
                 Button(onClick = onPlayPause) {
                     Text(
                         when {
-                            station.streamUrls.isEmpty() -> "Open"
+                            loadingStationName == station.name -> "Loading"
+                            station.streamUrls.isEmpty() -> "Play"
                             isCurrent && isPlaying -> "Pause"
                             else -> "Play"
                         }
