@@ -2583,7 +2583,6 @@ class MainActivity : ComponentActivity() {
             }
 
             val mediaSourceFactory = DefaultMediaSourceFactory(
-                context,
                 DefaultDataSource.Factory(context, httpFactory)
             )
 
