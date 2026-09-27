@@ -4006,7 +4006,6 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
-            }
         } else {
             val currentBookmark = urlText.trim()
             val currentIsBookmarked = currentBookmark.isNotEmpty() &&
