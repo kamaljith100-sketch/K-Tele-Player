@@ -242,6 +242,20 @@ private val kTeleColorScheme = darkColorScheme(
 )
 
 
+private data class KUniverseSong(
+    val title: String,
+    val artist: String
+)
+
+private val kUniverseSongs = listOf(
+    KUniverseSong("All Yi Ali", "Ali Gelich"),
+    KUniverseSong("Salam Hussain", "Nadeem Sarwar"),
+    KUniverseSong("Sara Zamana Mary Hussain Ka Hai", "Farhan Ali Waris"),
+    KUniverseSong("Janum Ali Ali", "Nadeem Sarwar"),
+    KUniverseSong("Salam Ghazi Salam Ghazi", "Nadeem Sarwar"),
+    KUniverseSong("Abbas Ka Saha Hai", "Naat Collection")
+)
+
 private const val MALAYALAM_RADIO_URL = "https://radiosindia.com/malayalamradio.html"
 private const val MUSIC_SITE_URL = "https://listenfree.in/"
 
@@ -1157,22 +1171,22 @@ private const val MUSIC_BRANDING_HOOK = """
 
     function hideNonMusicSections(root) {
         if (!root || !root.querySelectorAll) return;
-        root.querySelectorAll('h1,h2,h3,h4,h5,p,span,div,a,button').forEach(function(node) {
-            var text = (node.innerText || node.textContent || '').trim();
-            if (!text || text.length > 700 || !nonMusicPattern.test(text)) return;
-            var target = node;
-            for (var depth = 0; depth < 5 && target.parentElement; depth++) {
-                var candidate = target.parentElement;
-                var candidateText = (candidate.innerText || '').trim();
-                if (candidate === document.body || candidate === document.documentElement) break;
-                if (candidateText.length >= 35 && candidateText.length <= 1400 &&
-                    (candidate.querySelector('a,button') || candidateText.indexOf('\n') >= 0)) {
-                    target = candidate;
-                } else {
-                    break;
+        root.querySelectorAll('footer, [role="contentinfo"]').forEach(function(node) {
+            node.style.setProperty('display', 'none', 'important');
+        });
+        root.querySelectorAll('h1,h2,h3,h4,h5,p,span,a,button,li').forEach(function(node) {
+            var text = (node.innerText || node.textContent || '').trim().replace(/\s+/g, ' ');
+            if (!text || text.length > 280 || !nonMusicPattern.test(text)) return;
+            var target = node.closest('footer, [role="contentinfo"], section, article, li');
+            if (!target) {
+                target = node;
+                var parent = node.parentElement;
+                if (parent) {
+                    var parentText = (parent.innerText || '').trim();
+                    if (parentText.length >= 20 && parentText.length <= 900 && parent.children.length <= 18) target = parent;
                 }
             }
-            if (target !== document.body && target !== document.documentElement) {
+            if (target !== document.body && target !== document.documentElement && target !== document.querySelector('main')) {
                 target.style.setProperty('display', 'none', 'important');
             }
         });
@@ -3371,6 +3385,9 @@ class MainActivity : ComponentActivity() {
 
       @Composable
       private fun MusicBrowserScreen() {
+          var musicMode by remember { mutableStateOf("library") }
+          var selectedSong by remember { mutableStateOf(kUniverseSongs[3]) }
+          var isPlaying by remember { mutableStateOf(false) }
           var musicWebView by remember { mutableStateOf<WebView?>(null) }
 
           fun closeMusicBrowser() {
@@ -3381,101 +3398,186 @@ class MainActivity : ComponentActivity() {
               mediaHubOpen = true
           }
 
-          BackHandler {
-              val view = musicWebView
-              if (view?.canGoBack() == true) view.goBack() else closeMusicBrowser()
+          fun openSong(song: KUniverseSong) {
+              selectedSong = song
+              isPlaying = true
+              musicMode = "now"
           }
 
-          DisposableEffect(Unit) {
-              onDispose {
-                  musicWebView?.stopLoading()
-                  musicWebView?.destroy()
+          BackHandler {
+              when {
+                  musicMode == "browse" && musicWebView?.canGoBack() == true -> musicWebView?.goBack()
+                  musicMode != "library" -> musicMode = "library"
+                  else -> closeMusicBrowser()
               }
           }
 
-          Column(
-              modifier = Modifier
-                  .fillMaxSize()
-                  .background(Color(0xFF080808))
-          ) {
-              AndroidView(
-                  factory = { viewContext ->
-                      WebView(viewContext).apply {
-                          setBackgroundColor(android.graphics.Color.rgb(8, 8, 8))
-                          settings.javaScriptEnabled = true
-                          settings.domStorageEnabled = true
-                          settings.javaScriptCanOpenWindowsAutomatically = false
-                          settings.setSupportMultipleWindows(false)
-                          settings.mediaPlaybackRequiresUserGesture = false
-                          settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-                          settings.allowContentAccess = true
-                          settings.allowFileAccess = true
-                          webChromeClient = WebChromeClient()
-                          webViewClient = object : WebViewClient() {
-                              override fun shouldOverrideUrlLoading(
-                                  view: WebView,
-                                  request: WebResourceRequest
-                              ): Boolean {
-                                  val url = request.url.toString()
-                                  if (isBlockedAdRequest(url)) return true
-                                  val scheme = request.url.scheme.orEmpty().lowercase()
-                                  return scheme != "http" && scheme != "https"
-                              }
+          DisposableEffect(musicMode) {
+              onDispose {
+                  if (musicMode != "browse") {
+                      musicWebView?.stopLoading()
+                      musicWebView?.destroy()
+                      musicWebView = null
+                  }
+              }
+          }
 
-                              @Suppress("DEPRECATION")
-                              override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
-                                  if (isBlockedAdRequest(url)) return true
-                                  val scheme = Uri.parse(url).scheme.orEmpty().lowercase()
-                                  return scheme != "http" && scheme != "https"
+          when (musicMode) {
+              "now" -> {
+                  Column(modifier = Modifier.fillMaxSize().background(Color(0xFF0B2818))) {
+                      Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                          TextButton(onClick = { musicMode = "library" }) { Text("‹", color = Color.White, fontSize = 32.sp) }
+                          Text("NOW PLAYING", color = Color.White, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                          Text("⋮", color = Color.White, fontSize = 26.sp)
+                      }
+                      Column(modifier = Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                          Spacer(modifier = Modifier.height(18.dp))
+                          AppLogo(modifier = Modifier.size(if (LocalConfiguration.current.screenWidthDp < 500) 210.dp else 280.dp))
+                          Spacer(modifier = Modifier.height(28.dp))
+                          Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                              Column(modifier = Modifier.weight(1f)) {
+                                  Text(selectedSong.title, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                                  Text(selectedSong.artist, color = Color(0xFFB8C7BC), fontSize = 15.sp)
                               }
+                              Text("♥", color = Color(0xFF57E77D), fontSize = 28.sp)
+                          }
+                          Spacer(modifier = Modifier.height(24.dp))
+                          Box(modifier = Modifier.fillMaxWidth().height(3.dp).background(Color(0xFF91A197))) {
+                              Box(modifier = Modifier.fillMaxWidth(if (isPlaying) 0.48f else 0.06f).height(3.dp).background(Color.White))
+                          }
+                          Row(modifier = Modifier.fillMaxWidth().padding(top = 7.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                              Text(if (isPlaying) "0:49" else "0:00", color = Color(0xFFB8C7BC), fontSize = 12.sp)
+                              Text("-2:34", color = Color(0xFFB8C7BC), fontSize = 12.sp)
+                          }
+                          Spacer(modifier = Modifier.height(20.dp))
+                          Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceEvenly) {
+                              TextButton(onClick = { }) { Text("↝", color = Color.White, fontSize = 28.sp) }
+                              TextButton(onClick = { }) { Text("|‹", color = Color.White, fontSize = 25.sp) }
+                              TextButton(onClick = { isPlaying = !isPlaying }, modifier = Modifier.size(68.dp)) { Text(if (isPlaying) "Ⅱ" else "▶", color = Color.Black, fontSize = 27.sp) }
+                              TextButton(onClick = { }) { Text("›|", color = Color.White, fontSize = 25.sp) }
+                              TextButton(onClick = { }) { Text("⊖", color = Color.White, fontSize = 26.sp) }
+                          }
+                          Spacer(modifier = Modifier.height(22.dp))
+                          Text("LYRICS", color = Color.White, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                          Text("⌄", color = Color.White, fontSize = 24.sp)
+                      }
+                      Row(modifier = Modifier.fillMaxWidth().background(Color(0xFF123A23)).padding(vertical = 5.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+                          TextButton(onClick = { musicMode = "library" }) { Text("⌂  Library", color = Color(0xFF8CF5A7), fontSize = 12.sp) }
+                          TextButton(onClick = { musicMode = "browse" }) { Text("⌕  Browse", color = Color(0xFFBDBDBD), fontSize = 12.sp) }
+                          TextButton(onClick = { closeMusicBrowser() }) { Text("‹  Media", color = Color(0xFFBDBDBD), fontSize = 12.sp) }
+                      }
+                  }
+              }
 
-                              override fun shouldInterceptRequest(
-                                  view: WebView,
-                                  request: WebResourceRequest
-                              ): WebResourceResponse? {
-                                  if (isBlockedAdRequest(request.url.toString())) {
-                                      return WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(ByteArray(0)))
+              "browse" -> {
+                  Column(modifier = Modifier.fillMaxSize().background(Color(0xFF080808))) {
+                      Row(modifier = Modifier.fillMaxWidth().background(Color(0xFF101010)).padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                          TextButton(onClick = { musicMode = "library" }) { Text("‹", color = Color.White, fontSize = 30.sp) }
+                          AppLogo(modifier = Modifier.size(32.dp))
+                          Text("Browse Music", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 10.dp))
+                      }
+                      AndroidView(
+                          factory = { viewContext ->
+                              WebView(viewContext).apply {
+                                  setBackgroundColor(android.graphics.Color.rgb(8, 8, 8))
+                                  settings.javaScriptEnabled = true
+                                  settings.domStorageEnabled = true
+                                  settings.javaScriptCanOpenWindowsAutomatically = false
+                                  settings.setSupportMultipleWindows(false)
+                                  settings.mediaPlaybackRequiresUserGesture = false
+                                  settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+                                  settings.allowContentAccess = true
+                                  settings.allowFileAccess = true
+                                  webChromeClient = WebChromeClient()
+                                  webViewClient = object : WebViewClient() {
+                                      override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                                          val url = request.url.toString()
+                                          if (isBlockedAdRequest(url)) return true
+                                          val scheme = request.url.scheme.orEmpty().lowercase()
+                                          return scheme != "http" && scheme != "https"
+                                      }
+                                      @Suppress("DEPRECATION")
+                                      override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
+                                          if (isBlockedAdRequest(url)) return true
+                                          val scheme = Uri.parse(url).scheme.orEmpty().lowercase()
+                                          return scheme != "http" && scheme != "https"
+                                      }
+                                      override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+                                          if (isBlockedAdRequest(request.url.toString())) return WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(ByteArray(0)))
+                                          return super.shouldInterceptRequest(view, request)
+                                      }
+                                      @Suppress("DEPRECATION")
+                                      override fun shouldInterceptRequest(view: WebView, url: String): WebResourceResponse? {
+                                          if (isBlockedAdRequest(url)) return WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(ByteArray(0)))
+                                          return super.shouldInterceptRequest(view, url)
+                                      }
+                                      override fun onPageFinished(view: WebView, url: String) {
+                                          view.evaluateJavascript(AD_CLEANUP_HOOK, null)
+                                          view.evaluateJavascript(MUSIC_BRANDING_HOOK, null)
+                                      }
                                   }
-                                  return super.shouldInterceptRequest(view, request)
+                                  loadUrl(MUSIC_SITE_URL)
+                                  musicWebView = this
                               }
+                          },
+                          modifier = Modifier.fillMaxWidth().weight(1f)
+                      )
+                      Row(modifier = Modifier.fillMaxWidth().background(Color(0xFF123A23)).padding(vertical = 5.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+                          TextButton(onClick = { musicMode = "library" }) { Text("⌂  Library", color = Color(0xFF8CF5A7), fontSize = 12.sp) }
+                          TextButton(onClick = { musicWebView?.reload() }) { Text("⌕  Browse", color = Color.White, fontSize = 12.sp) }
+                          TextButton(onClick = { closeMusicBrowser() }) { Text("‹  Media", color = Color(0xFFBDBDBD), fontSize = 12.sp) }
+                      }
+                  }
+              }
 
-                              @Suppress("DEPRECATION")
-                              override fun shouldInterceptRequest(view: WebView, url: String): WebResourceResponse? {
-                                  if (isBlockedAdRequest(url)) {
-                                      return WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(ByteArray(0)))
+              else -> {
+                  Column(modifier = Modifier.fillMaxSize().background(Color(0xFF174D2A))) {
+                      Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+                          Column(modifier = Modifier.weight(1f)) {
+                              Text("Liked Songs", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                              Text("${kUniverseSongs.size} Songs", color = Color(0xFFB4D6B8), fontSize = 13.sp)
+                          }
+                          TextButton(onClick = { if (kUniverseSongs.isNotEmpty()) openSong(kUniverseSongs.first()) }) { Text("▶", color = Color(0xFF50E879), fontSize = 30.sp) }
+                      }
+                      Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                          listOf("Chill", "EDM", "Pop", "Rap", "Folk", "Indie").forEach { tag ->
+                              Text(tag, color = Color.White, fontSize = 11.sp, modifier = Modifier.border(1.dp, Color(0xFF8ABF91), RoundedCornerShape(12.dp)).padding(horizontal = 10.dp, vertical = 5.dp))
+                          }
+                      }
+                      TextButton(onClick = { musicMode = "browse" }, modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
+                          Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                              Text("＋", color = Color.White, fontSize = 28.sp)
+                              Text("Add Songs / Browse Music", color = Color.White, fontSize = 16.sp, modifier = Modifier.padding(start = 10.dp))
+                          }
+                      }
+                      LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f), contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)) {
+                          items(kUniverseSongs) { song ->
+                              Row(modifier = Modifier.fillMaxWidth().clickable { openSong(song) }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                  AppLogo(modifier = Modifier.size(52.dp))
+                                  Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
+                                      Text(song.title, color = Color.White, fontSize = 15.sp, maxLines = 1)
+                                      Text(song.artist, color = Color(0xFFB4D6B8), fontSize = 12.sp, maxLines = 1)
                                   }
-                                  return super.shouldInterceptRequest(view, url)
-                              }
-
-                              override fun onPageFinished(view: WebView, url: String) {
-                                  view.evaluateJavascript(AD_CLEANUP_HOOK, null)
-                                  view.evaluateJavascript(MUSIC_BRANDING_HOOK, null)
+                                  Text("♥", color = Color(0xFF50E879), fontSize = 20.sp)
+                                  Text("⋯", color = Color(0xFFB4D6B8), fontSize = 22.sp, modifier = Modifier.padding(start = 10.dp))
                               }
                           }
-                          loadUrl(MUSIC_SITE_URL)
-                          musicWebView = this
                       }
-                  },
-                  modifier = Modifier
-                      .fillMaxWidth()
-                      .weight(1f)
-              )
-
-              Row(
-                  modifier = Modifier
-                      .fillMaxWidth()
-                      .background(Color(0xFF08150F))
-                      .padding(vertical = 4.dp),
-                  horizontalArrangement = Arrangement.SpaceEvenly
-              ) {
-                  TextButton(onClick = { musicWebView?.loadUrl(MUSIC_SITE_URL) }) {
-                      Text("⌂  Home", color = Color(0xFF8CF5A7), fontSize = 12.sp)
-                  }
-                  TextButton(onClick = { musicWebView?.requestFocus() }) {
-                      Text("⌕  Browse", color = Color(0xFFBDBDBD), fontSize = 12.sp)
-                  }
-                  TextButton(onClick = { closeMusicBrowser() }) {
-                      Text("‹  Media", color = Color(0xFFBDBDBD), fontSize = 12.sp)
+                      if (isPlaying) {
+                          Row(modifier = Modifier.fillMaxWidth().background(Color(0xFF0D2416)).padding(horizontal = 12.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                              AppLogo(modifier = Modifier.size(42.dp))
+                              Column(modifier = Modifier.weight(1f).padding(start = 10.dp)) {
+                                  Text(selectedSong.title, color = Color.White, fontSize = 13.sp, maxLines = 1)
+                                  Text(selectedSong.artist, color = Color(0xFFB4D6B8), fontSize = 11.sp)
+                              }
+                              TextButton(onClick = { isPlaying = !isPlaying }) { Text(if (isPlaying) "Ⅱ" else "▶", color = Color.White, fontSize = 20.sp) }
+                          }
+                      }
+                      Row(modifier = Modifier.fillMaxWidth().background(Color(0xFF123A23)).padding(vertical = 5.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+                          TextButton(onClick = { musicMode = "library" }) { Text("⌂  Library", color = Color(0xFF8CF5A7), fontSize = 12.sp) }
+                          TextButton(onClick = { musicMode = "browse" }) { Text("⌕  Browse", color = Color(0xFFBDBDBD), fontSize = 12.sp) }
+                          TextButton(onClick = { closeMusicBrowser() }) { Text("‹  Media", color = Color(0xFFBDBDBD), fontSize = 12.sp) }
+                      }
                   }
               }
           }
