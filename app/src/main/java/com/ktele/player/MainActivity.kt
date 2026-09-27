@@ -1310,18 +1310,12 @@ private const val MUSIC_BRANDING_HOOK = """
         if (document.title) document.title = renameBrand(document.title);
     }
 
-    var nonMusicPattern = /(?:product\s+updates|new\s+features\s+released|bugs\s+fixed|tune\s*free|beta\s+version\s+right\s+now|give\s+feedback\s+to\s+improve|open\s+tune\s*free|copy\s+link|join\s+our\s+socials|latest\s+updates|ask\s+any\s+questions|home\s+screen\s+suggestions|select\s+the\s+languages|^let's\s+go$|^login$|^platform$|company\s*&\s*legal|how\s+it\s+works|^features$|^faq$|^blog$|privacy\s+policy|terms\s+of\s+service|cookie\s+policy|^dmca$|^disclaimer$|^about$|^contact$)/i;
+    var nonMusicPattern = /(?:product\s+updates|new\s+features\s+released|bugs\s+fixed|tune\s*free|beta\s+version\s+right\s+now|give\s+feedback\s+to\s+improve|open\s+tune\s*free|copy\s+link|join\s+our\s+socials|latest\s+updates|ask\s+any\s+questions|^let's\s+go$|^login$|^platform$|company\s*&\s*legal|how\s+it\s+works|^features$|^faq$|^blog$|privacy\s+policy|terms\s+of\s+service|cookie\s+policy|^dmca$|^disclaimer$|^about$|^contact$)/i;
 
     function hideNonMusicSections(root) {
         if (!root || !root.querySelectorAll) return;
         root.querySelectorAll('footer, [role="contentinfo"]').forEach(function(node) {
             node.style.setProperty('display', 'none', 'important');
-        });
-        root.querySelectorAll('dialog, [role="dialog"], [aria-modal="true"]').forEach(function(node) {
-            var dialogText = (node.innerText || node.textContent || '').trim();
-            if (/home\s+screen\s+suggestions|select\s+the\s+languages|let's\s+go/i.test(dialogText)) {
-                node.style.setProperty('display', 'none', 'important');
-            }
         });
         root.querySelectorAll('h1,h2,h3,h4,h5,p,span,a,button,li').forEach(function(node) {
             var text = (node.innerText || node.textContent || '').trim().replace(/\s+/g, ' ');
@@ -1452,7 +1446,6 @@ private const val MUSIC_BRANDING_HOOK = """
         configureLanguageSuggestions(document.documentElement);
         hideNonMusicSections(document.documentElement);
         hideMusicChrome(document.documentElement);
-        hideListenFreeFooter(document.documentElement);
         removeBlockingOverlays(document.documentElement);
         addBrandBadge();
     }
