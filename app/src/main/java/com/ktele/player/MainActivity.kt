@@ -255,7 +255,10 @@ private data class KUniverseSong(
     val searchQuery: String = title,
     val streamUrl: String? = null,
     val durationSeconds: Int = 0,
-    val imageUrl: String? = null
+    val imageUrl: String? = null,
+    val resultType: String = "song",
+    val language: String? = null,
+    val description: String? = null
 )
 
 private val kUniverseSongs = emptyList<KUniverseSong>()
@@ -317,33 +320,72 @@ private fun resolveMusicTrack(song: KUniverseSong): ResolvedMusicTrack? {
     return ResolvedMusicTrack(streamUrl, track.optInt("duration", 0), imageUrl)
 }
 
-private fun searchMusicSongs(query: String): List<KUniverseSong> {
+private fun detectMusicLanguage(query: String): String? {
+    val normalized = query.trim().lowercase()
+    return when {
+        normalized.contains("മലയാള") || normalized.contains("malayalam") -> "malayalam"
+        normalized.contains("தமிழ்") || normalized.contains("tamil") -> "tamil"
+        normalized.contains("हिंदी") || normalized.contains("hindi") -> "hindi"
+        normalized.contains("english") -> "english"
+        else -> null
+    }
+}
+
+private fun searchMusicSongs(
+    query: String,
+    languageFilter: String? = null
+): List<KUniverseSong> {
     val trimmedQuery = query.trim()
     if (trimmedQuery.isBlank()) return emptyList()
 
-    val connection = (URL(
-        MUSIC_API_BASE_URL + "/search?query=" + Uri.encode(trimmedQuery)
-    ).openConnection() as HttpURLConnection).apply {
-        requestMethod = "GET"
-        connectTimeout = 12_000
-        readTimeout = 12_000
-        setRequestProperty("Accept", "application/json")
-        setRequestProperty("User-Agent", "K-Tele-Player/1.0")
+    fun requestJson(searchTerm: String): JSONObject? {
+        val connection = (URL(
+            MUSIC_API_BASE_URL + "/search?query=" + Uri.encode(searchTerm)
+        ).openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 12_000
+            readTimeout = 12_000
+            setRequestProperty("Accept", "application/json")
+            setRequestProperty("User-Agent", "K-Tele-Player/1.0")
+        }
+        return try {
+            if (connection.responseCode !in 200..299) return null
+            JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+        } catch (_: Exception) {
+            null
+        } finally {
+            connection.disconnect()
+        }
     }
 
-    return try {
-        if (connection.responseCode !in 200..299) return emptyList()
-        val payload = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
-        val results = payload
-            .optJSONObject("data")
-            ?.optJSONObject("songs")
-            ?.optJSONArray("results")
-            ?: return emptyList()
+    val detectedLanguage = languageFilter ?: detectMusicLanguage(trimmedQuery)
+    val languageSearchTerm = when (detectedLanguage) {
+        "malayalam" -> "Malayalam"
+        "tamil" -> "Tamil"
+        "hindi" -> "Hindi"
+        "english" -> "English"
+        else -> null
+    }
+    val searchTerms = buildList {
+        add(trimmedQuery)
+        if (languageSearchTerm != null && !trimmedQuery.equals(languageSearchTerm, ignoreCase = true)) {
+            add(languageSearchTerm)
+        }
+    }
 
-        val seen = mutableSetOf<String>()
-        buildList {
+    val seen = mutableSetOf<String>()
+    val matches = mutableListOf<KUniverseSong>()
+    for (searchTerm in searchTerms) {
+        val payload = requestJson(searchTerm) ?: continue
+        val data = payload.optJSONObject("data") ?: continue
+
+        listOf("songs" to "song", "albums" to "album").forEach { (category, resultType) ->
+            val results = data.optJSONObject(category)?.optJSONArray("results") ?: return@forEach
             for (index in 0 until results.length()) {
                 val result = results.optJSONObject(index) ?: continue
+                val resultLanguage = result.optString("language").trim().lowercase()
+                if (detectedLanguage != null && resultLanguage != detectedLanguage) continue
+
                 val title = result.optString("title").trim()
                 if (title.isBlank()) continue
 
@@ -363,7 +405,7 @@ private fun searchMusicSongs(query: String): List<KUniverseSong> {
                         .ifBlank { "Unknown artist" }
                 }
 
-                val key = "$title\u0000$artist"
+                val key = "$resultType\u0000$title\u0000$artist"
                 if (!seen.add(key)) continue
                 val images = result.optJSONArray("image")
                 val imageUrl = images
@@ -371,22 +413,21 @@ private fun searchMusicSongs(query: String): List<KUniverseSong> {
                     ?.optString("url")
                     ?.takeIf { it.isNotBlank() }
 
-                add(
-                    KUniverseSong(
-                        title = title,
-                        artist = artist,
-                        searchQuery = title,
-                        imageUrl = imageUrl
-                    )
+                matches += KUniverseSong(
+                    title = title,
+                    artist = artist,
+                    searchQuery = title,
+                    imageUrl = imageUrl,
+                    resultType = resultType,
+                    language = resultLanguage.ifBlank { detectedLanguage },
+                    description = result.optString("description").trim().takeIf { it.isNotBlank() }
                 )
-                if (size == 50) break
+                if (matches.size == 50) return matches
             }
         }
-    } catch (_: Exception) {
-        emptyList()
-    } finally {
-        connection.disconnect()
+        if (matches.isNotEmpty()) break
     }
+    return matches
 }
 
 private fun enqueueMusicDownload(context: Context, song: KUniverseSong, streamUrl: String): Boolean {
@@ -3926,8 +3967,11 @@ class MainActivity : ComponentActivity() {
               mediaHubOpen = true
           }
 
-           fun searchAllSongs() {
-               val query = browseSearchQuery.trim()
+           fun searchAllSongs(
+               queryOverride: String? = null,
+               languageFilter: String? = null
+           ) {
+               val query = (queryOverride ?: browseSearchQuery).trim()
                if (query.isBlank()) {
                    browseSearchResults = emptyList()
                    browseSearchMessage = null
@@ -3935,15 +3979,18 @@ class MainActivity : ComponentActivity() {
                    return
                }
 
+               if (queryOverride != null) browseSearchQuery = query
                browseSearchSubmitted = true
                browseSearchLoading = true
                browseSearchMessage = null
                musicScope.launch {
-                   val results = withContext(Dispatchers.IO) { searchMusicSongs(query) }
+                   val results = withContext(Dispatchers.IO) {
+                       searchMusicSongs(query, languageFilter)
+                   }
                    browseSearchLoading = false
                    browseSearchResults = results
                    browseSearchMessage = if (results.isEmpty()) {
-                       "No songs found for \"$query\"."
+                       "No matching songs or albums found for \"$query\"."
                    } else {
                        null
                    }
@@ -4147,6 +4194,31 @@ class MainActivity : ComponentActivity() {
                                }
                            }
                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            listOf(
+                                "Malayalam" to "malayalam",
+                                "Tamil" to "tamil",
+                                "Hindi" to "hindi",
+                                "English" to "english"
+                            ).forEach { (label, language) ->
+                                TextButton(
+                                    onClick = { searchAllSongs(label, language) },
+                                    contentPadding = PaddingValues(horizontal = 9.dp, vertical = 0.dp),
+                                    modifier = Modifier.border(
+                                        1.dp,
+                                        Color(0xFF2B8F68),
+                                        RoundedCornerShape(16.dp)
+                                    )
+                                ) {
+                                    Text(label, color = Color(0xFF8CF5A7), fontSize = 11.sp)
+                                }
+                            }
+                        }
                        if (browseSearchSubmitted) {
                            if (browseSearchLoading) {
                                Box(
@@ -4194,6 +4266,18 @@ class MainActivity : ComponentActivity() {
                                            ) {
                                                Text(song.title, color = Color.White, fontSize = 15.sp, maxLines = 1)
                                                Text(song.artist, color = Color(0xFFB4D6B8), fontSize = 12.sp, maxLines = 1)
+                                                Text(
+                                                    song.description ?: buildString {
+                                                        append(song.resultType.uppercase())
+                                                        song.language?.takeIf { it.isNotBlank() }?.let {
+                                                            append(" · ")
+                                                            append(it.uppercase())
+                                                        }
+                                                    },
+                                                    color = Color(0xFF6FD995),
+                                                    fontSize = 10.sp,
+                                                    maxLines = 1
+                                                )
                                            }
                                            Text("▶", color = Color(0xFF50E879), fontSize = 18.sp)
                                        }
