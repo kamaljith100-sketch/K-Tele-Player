@@ -447,8 +447,27 @@ private fun resolveMalayalamRadioUrl(rawUrl: String): String {
     }
 }
 
+/*
+ * The directory still serves its station artwork over HTTP. Android can play
+ * cleartext streams (the manifest explicitly allows it), but Coil may reject
+ * or fail to follow those image redirects on some devices. Prefer HTTPS for
+ * artwork while keeping the original stream URL untouched so stations whose
+ * audio server only supports HTTP can still play.
+ */
+private fun resolveMalayalamRadioImageUrl(rawUrl: String): String {
+    val resolved = resolveMalayalamRadioUrl(rawUrl)
+    return if (resolved.startsWith("http://", ignoreCase = true)) {
+        "https://${resolved.substringAfter("://")}"
+    } else {
+        resolved
+    }
+}
+
 private fun splitMalayalamRadioStreamCandidates(rawValue: String): List<String> =
     rawValue
+        .replace("\\/", "/")
+        .replace("\\u0026", "&", ignoreCase = true)
+        .replace("\\u003d", "=", ignoreCase = true)
         .replace("&amp;", "&", ignoreCase = true)
         .replace("&#39;", "'", ignoreCase = true)
         .replace("&quot;", "\"", ignoreCase = true)
@@ -480,8 +499,8 @@ private fun directoryMalayalamRadioStation(
 ): MalayalamRadioStation = MalayalamRadioStation(
     name = name,
     frequency = "Online radio",
-    imageUrl = imagePath?.let(::resolveMalayalamRadioUrl)
-        ?: resolveMalayalamRadioUrl(
+    imageUrl = imagePath?.let(::resolveMalayalamRadioImageUrl)
+        ?: resolveMalayalamRadioImageUrl(
             malayalamRadioImageOverrides[pagePath.substringAfterLast('/')]
                 ?: "images/${pagePath.substringAfterLast('/').substringBeforeLast('.')}.jpg"
         ),
@@ -637,7 +656,7 @@ private suspend fun loadMalayalamRadioStationStreams(
         // value separated by "or". Keep each URL separate so ExoPlayer can try
         // the next stream when the first provider is offline.
         val directValuePattern = Regex(
-            """(?:file|contentUrl|urlTemplate|streamUrl)\s*["']?\s*[:=]\s*["']([^"']+)["']""",
+            """(?:file|contentUrl|urlTemplate|streamUrl|source|src)\s*["']?\s*[:=]\s*["']((?:\\.|[^"'])+)["']""",
             RegexOption.IGNORE_CASE
         )
         directValuePattern.findAll(html).forEach { match ->
@@ -655,10 +674,14 @@ private suspend fun loadMalayalamRadioStationStreams(
         }
 
         // Also support pages that expose a stream as a plain absolute URL.
-        val absoluteUrlPattern = Regex("""https?://[^\s"'<>]+""", RegexOption.IGNORE_CASE)
+        val absoluteUrlPattern = Regex("""https?:\\?/\\?/[^\s"'<>]+""", RegexOption.IGNORE_CASE)
         candidates += absoluteUrlPattern
             .findAll(html)
-            .map { it.value.trimEnd('.', ',', ';', ')', ']', '}') }
+            .map {
+                it.value
+                    .replace("\\/", "/")
+                    .trimEnd('.', ',', ';', ')', ']', '}')
+            }
             .filter(::isMalayalamRadioStreamUrl)
             .toList()
 
@@ -2962,7 +2985,14 @@ class MainActivity : ComponentActivity() {
                         radioError =
                             "${station.name} stream കണ്ടെത്താനായില്ല. വീണ്ടും Play അമർത്തൂ."
                     } else {
-                        playStation(station.copy(streamUrls = streams))
+                        val resolvedStation = station.copy(streamUrls = streams)
+                        // Keep the resolved URL list in the visible station item.
+                        // This avoids downloading the same station page every time
+                        // the user pauses and starts that station again.
+                        stations = stations.map { current ->
+                            if (current.pageUrl == station.pageUrl) resolvedStation else current
+                        }
+                        playStation(resolvedStation)
                     }
                 }
                 return
