@@ -1153,7 +1153,7 @@ private const val MUSIC_BRANDING_HOOK = """
         });
     }
 
-    var nonMusicPattern = /(?:product\s+updates|new\s+features\s+released|bugs\s+fixed|tune\s*free|beta\s+version\s+right\s+now|give\s+feedback\s+to\s+improve|open\s+tune\s*free|copy\s+link)/i;
+    var nonMusicPattern = /(?:product\s+updates|new\s+features\s+released|bugs\s+fixed|tune\s*free|beta\s+version\s+right\s+now|give\s+feedback\s+to\s+improve|open\s+tune\s*free|copy\s+link|join\s+our\s+socials|latest\s+updates|ask\s+any\s+questions|^login$|^platform$|company\s*&\s*legal|how\s+it\s+works|^features$|^faq$|^blog$|privacy\s+policy|terms\s+of\s+service|cookie\s+policy|^dmca$|^disclaimer$|^about$|^contact$)/i;
 
     function hideNonMusicSections(root) {
         if (!root || !root.querySelectorAll) return;
@@ -3372,15 +3372,6 @@ class MainActivity : ComponentActivity() {
       @Composable
       private fun MusicBrowserScreen() {
           var musicWebView by remember { mutableStateOf<WebView?>(null) }
-          var musicTitle by remember { mutableStateOf("K Universe") }
-          var isMusicLoading by remember { mutableStateOf(true) }
-          var isPlaying by remember { mutableStateOf(false) }
-          var isLiked by remember { mutableStateOf(false) }
-          var shuffleEnabled by remember { mutableStateOf(false) }
-
-          fun runMusicScript(script: String) {
-              musicWebView?.evaluateJavascript(script, null)
-          }
 
           fun closeMusicBrowser() {
               musicWebView?.stopLoading()
@@ -3388,12 +3379,6 @@ class MainActivity : ComponentActivity() {
               musicWebView = null
               musicBrowserOpen = false
               mediaHubOpen = true
-          }
-
-          fun togglePlayback() {
-              isPlaying = !isPlaying
-              val action = if (isPlaying) "play()" else "pause()"
-              runMusicScript("document.querySelectorAll('audio,video').forEach(function(media){ try { media.$action; } catch(e) {} });")
           }
 
           BackHandler {
@@ -3411,105 +3396,12 @@ class MainActivity : ComponentActivity() {
           Column(
               modifier = Modifier
                   .fillMaxSize()
-                  .background(Color(0xFF101010))
+                  .background(Color(0xFF080808))
           ) {
-              Row(
-                  modifier = Modifier
-                      .fillMaxWidth()
-                      .background(Color(0xFF111111))
-                      .padding(horizontal = 10.dp, vertical = 8.dp),
-                  verticalAlignment = Alignment.CenterVertically
-              ) {
-                  TextButton(onClick = { closeMusicBrowser() }) {
-                      Text("‹", color = Color.White, fontSize = 30.sp)
-                  }
-                  AppLogo(modifier = Modifier.size(34.dp))
-                  Column(modifier = Modifier.weight(1f).padding(start = 10.dp)) {
-                      Text(
-                          "K Universe",
-                          color = Color.White,
-                          style = MaterialTheme.typography.titleLarge,
-                          fontWeight = FontWeight.Bold
-                      )
-                      Text(
-                          if (isMusicLoading) "Loading music..." else musicTitle,
-                          color = Color(0xFFB7B7B7),
-                          style = MaterialTheme.typography.bodySmall,
-                          maxLines = 1
-                      )
-                  }
-                  TextButton(onClick = { musicWebView?.reload() }) {
-                      Text("⋮", color = Color.White, fontSize = 24.sp)
-                  }
-              }
-
-              Row(
-                  modifier = Modifier
-                      .fillMaxWidth()
-                      .background(Color(0xFF171717))
-                      .padding(horizontal = 18.dp, vertical = 12.dp),
-                  verticalAlignment = Alignment.CenterVertically
-              ) {
-                  AppLogo(modifier = Modifier.size(96.dp))
-                  Column(modifier = Modifier.weight(1f).padding(start = 16.dp)) {
-                      Text("K Universe Music", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                      Text("Play music inside K-Tele", color = Color(0xFFBDBDBD), fontSize = 14.sp)
-                      Spacer(modifier = Modifier.height(10.dp))
-                      Box(
-                          modifier = Modifier
-                              .fillMaxWidth()
-                              .height(3.dp)
-                              .background(Color(0xFF5E5E5E))
-                      ) {
-                          Box(
-                              modifier = Modifier
-                                  .fillMaxWidth(if (isPlaying) 0.34f else 0.08f)
-                                  .height(3.dp)
-                                  .background(Color.White)
-                          )
-                      }
-                      Row(
-                          modifier = Modifier.fillMaxWidth().padding(top = 5.dp),
-                          horizontalArrangement = Arrangement.SpaceBetween
-                      ) {
-                          Text(if (isPlaying) "Playing" else "Ready", color = Color(0xFFBDBDBD), fontSize = 12.sp)
-                          Text("K Universe", color = Color(0xFFBDBDBD), fontSize = 12.sp)
-                      }
-                  }
-              }
-
-              Row(
-                  modifier = Modifier
-                      .fillMaxWidth()
-                      .background(Color(0xFF171717))
-                      .padding(horizontal = 22.dp, vertical = 8.dp),
-                  verticalAlignment = Alignment.CenterVertically,
-                  horizontalArrangement = Arrangement.SpaceBetween
-              ) {
-                  TextButton(onClick = { shuffleEnabled = !shuffleEnabled }) {
-                      Text("↝", color = if (shuffleEnabled) Color(0xFF8CF5A7) else Color.White, fontSize = 28.sp)
-                  }
-                  TextButton(onClick = { musicWebView?.goBack() }) {
-                      Text("|‹", color = Color.White, fontSize = 26.sp)
-                  }
-                  TextButton(
-                      onClick = { togglePlayback() },
-                      modifier = Modifier.size(62.dp)
-                  ) {
-                      Text(if (isPlaying) "Ⅱ" else "▶", color = Color.Black, fontSize = 25.sp)
-                  }
-                  TextButton(onClick = { musicWebView?.reload() }) {
-                      Text("›|", color = Color.White, fontSize = 26.sp)
-                  }
-                  TextButton(onClick = { isLiked = !isLiked }) {
-                      Text(if (isLiked) "♥" else "♡", color = if (isLiked) Color(0xFF8CF5A7) else Color.White, fontSize = 28.sp)
-                  }
-              }
-
               AndroidView(
                   factory = { viewContext ->
                       WebView(viewContext).apply {
-                          setBackgroundColor(android.graphics.Color.rgb(12, 12, 12))
+                          setBackgroundColor(android.graphics.Color.rgb(8, 8, 8))
                           settings.javaScriptEnabled = true
                           settings.domStorageEnabled = true
                           settings.javaScriptCanOpenWindowsAutomatically = false
@@ -3555,14 +3447,7 @@ class MainActivity : ComponentActivity() {
                                   return super.shouldInterceptRequest(view, url)
                               }
 
-                              override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
-                                  isMusicLoading = true
-                                  musicTitle = "K Universe"
-                              }
-
                               override fun onPageFinished(view: WebView, url: String) {
-                                  isMusicLoading = false
-                                  musicTitle = "K Universe"
                                   view.evaluateJavascript(AD_CLEANUP_HOOK, null)
                                   view.evaluateJavascript(MUSIC_BRANDING_HOOK, null)
                               }
@@ -3574,13 +3459,12 @@ class MainActivity : ComponentActivity() {
                   modifier = Modifier
                       .fillMaxWidth()
                       .weight(1f)
-                      .padding(horizontal = 10.dp)
               )
 
               Row(
                   modifier = Modifier
                       .fillMaxWidth()
-                      .background(Color(0xFF101010))
+                      .background(Color(0xFF08150F))
                       .padding(vertical = 4.dp),
                   horizontalArrangement = Arrangement.SpaceEvenly
               ) {
