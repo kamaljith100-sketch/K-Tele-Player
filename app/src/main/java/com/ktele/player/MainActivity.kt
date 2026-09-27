@@ -1178,9 +1178,7 @@ private const val MUSIC_BRANDING_HOOK = """
         });
         root.querySelectorAll('dialog, [role="dialog"], [aria-modal="true"]').forEach(function(node) {
             var dialogText = (node.innerText || node.textContent || '').trim();
-            if (/home\s+screen\s+suggestions|select\s+the\s+languages|let's\s+go/i.test(dialogText)) {
-                node.style.setProperty('display', 'none', 'important');
-            }
+            if (/home\s+screen\s+suggestions|select\s+the\s+languages|let's\s+go/i.test(dialogText)) node.remove();
         });
         root.querySelectorAll('h1,h2,h3,h4,h5,p,span,a,button,li').forEach(function(node) {
             var text = (node.innerText || node.textContent || '').trim().replace(/\s+/g, ' ');
@@ -1200,6 +1198,26 @@ private const val MUSIC_BRANDING_HOOK = """
         });
     }
 
+    function removeBlockingOverlays(root) {
+        if (!root || !root.querySelectorAll) return;
+        root.querySelectorAll('div, [class], [id]').forEach(function(node) {
+            if (node.id === '__kteleBrandBadge') return;
+            var style = window.getComputedStyle(node);
+            var position = style.position;
+            var zIndex = parseInt(style.zIndex || '0', 10);
+            var blur = (style.backdropFilter && style.backdropFilter !== 'none') ||
+                (style.webkitBackdropFilter && style.webkitBackdropFilter !== 'none') ||
+                (style.filter && style.filter.indexOf('blur') >= 0);
+            var hasForm = !!node.querySelector('input, textarea, select, audio, video');
+            if ((position === 'fixed' || position === 'absolute') && zIndex >= 20 && blur && !hasForm) node.remove();
+        });
+        if (document.body) {
+            document.body.style.removeProperty('filter');
+            document.body.style.removeProperty('overflow');
+            document.body.style.removeProperty('pointer-events');
+        }
+    }
+
     function addBrandBadge() {
         if (document.getElementById('__kteleBrandBadge') || !document.body) return;
         var badge = document.createElement('div');
@@ -1211,6 +1229,7 @@ private const val MUSIC_BRANDING_HOOK = """
 
     replaceBranding(document.documentElement);
     hideNonMusicSections(document.documentElement);
+    removeBlockingOverlays(document.documentElement);
     addBrandBadge();
     new MutationObserver(function(records) {
         records.forEach(function(record) {
@@ -1218,6 +1237,7 @@ private const val MUSIC_BRANDING_HOOK = """
                 if (node.nodeType === 1) {
                     replaceBranding(node);
                     hideNonMusicSections(node);
+                    removeBlockingOverlays(node);
                 }
             });
         });
@@ -3399,6 +3419,7 @@ class MainActivity : ComponentActivity() {
           var lyricsVisible by remember { mutableStateOf(false) }
           var lyricsLoading by remember { mutableStateOf(false) }
           var lyricsText by remember { mutableStateOf<String?>(null) }
+          var searchQuery by remember { mutableStateOf("") }
           var musicWebView by remember { mutableStateOf<WebView?>(null) }
 
           fun closeMusicBrowser() {
@@ -3497,7 +3518,13 @@ class MainActivity : ComponentActivity() {
                           Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceEvenly) {
                               TextButton(onClick = { }) { Text("↝", color = Color.White, fontSize = 28.sp) }
                               TextButton(onClick = { }) { Text("|‹", color = Color.White, fontSize = 25.sp) }
-                              TextButton(onClick = { isPlaying = !isPlaying }, modifier = Modifier.size(68.dp)) { Text(if (isPlaying) "Ⅱ" else "▶", color = Color.Black, fontSize = 27.sp) }
+                              Button(
+                                  onClick = { isPlaying = !isPlaying },
+                                  modifier = Modifier.size(68.dp),
+                                  shape = RoundedCornerShape(50.dp),
+                                  contentPadding = PaddingValues(0.dp),
+                                  colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black)
+                              ) { Text(if (isPlaying) "Ⅱ" else "▶", fontSize = 27.sp) }
                               TextButton(onClick = { }) { Text("›|", color = Color.White, fontSize = 25.sp) }
                               TextButton(onClick = { }) { Text("⊖", color = Color.White, fontSize = 26.sp) }
                           }
@@ -3590,6 +3617,9 @@ class MainActivity : ComponentActivity() {
               }
 
               else -> {
+                  val visibleSongs = kUniverseSongs.filter { song ->
+                      searchQuery.isBlank() || song.title.contains(searchQuery, ignoreCase = true) || song.artist.contains(searchQuery, ignoreCase = true)
+                  }
                   Column(modifier = Modifier.fillMaxSize().background(Color(0xFF174D2A))) {
                       Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 18.dp), verticalAlignment = Alignment.CenterVertically) {
                           Column(modifier = Modifier.weight(1f)) {
@@ -3603,6 +3633,13 @@ class MainActivity : ComponentActivity() {
                               Text(tag, color = Color.White, fontSize = 11.sp, modifier = Modifier.border(1.dp, Color(0xFF8ABF91), RoundedCornerShape(12.dp)).padding(horizontal = 10.dp, vertical = 5.dp))
                           }
                       }
+                      OutlinedTextField(
+                          value = searchQuery,
+                          onValueChange = { searchQuery = it },
+                          placeholder = { Text("Search songs or artists") },
+                          singleLine = true,
+                          modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp)
+                      )
                       TextButton(onClick = { musicMode = "browse" }, modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
                           Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                               Text("＋", color = Color.White, fontSize = 28.sp)
@@ -3610,7 +3647,7 @@ class MainActivity : ComponentActivity() {
                           }
                       }
                       LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f), contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)) {
-                          items(kUniverseSongs) { song ->
+                          items(visibleSongs) { song ->
                               Row(modifier = Modifier.fillMaxWidth().clickable { openSong(song) }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                                   AppLogo(modifier = Modifier.size(52.dp))
                                   Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
