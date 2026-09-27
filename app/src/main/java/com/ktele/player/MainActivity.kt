@@ -1167,12 +1167,18 @@ private const val MUSIC_BRANDING_HOOK = """
         });
     }
 
-    var nonMusicPattern = /(?:product\s+updates|new\s+features\s+released|bugs\s+fixed|tune\s*free|beta\s+version\s+right\s+now|give\s+feedback\s+to\s+improve|open\s+tune\s*free|copy\s+link|join\s+our\s+socials|latest\s+updates|ask\s+any\s+questions|^login$|^platform$|company\s*&\s*legal|how\s+it\s+works|^features$|^faq$|^blog$|privacy\s+policy|terms\s+of\s+service|cookie\s+policy|^dmca$|^disclaimer$|^about$|^contact$)/i;
+    var nonMusicPattern = /(?:product\s+updates|new\s+features\s+released|bugs\s+fixed|tune\s*free|beta\s+version\s+right\s+now|give\s+feedback\s+to\s+improve|open\s+tune\s*free|copy\s+link|join\s+our\s+socials|latest\s+updates|ask\s+any\s+questions|home\s+screen\s+suggestions|select\s+the\s+languages|^let's\s+go$|^login$|^platform$|company\s*&\s*legal|how\s+it\s+works|^features$|^faq$|^blog$|privacy\s+policy|terms\s+of\s+service|cookie\s+policy|^dmca$|^disclaimer$|^about$|^contact$)/i;
 
     function hideNonMusicSections(root) {
         if (!root || !root.querySelectorAll) return;
         root.querySelectorAll('footer, [role="contentinfo"]').forEach(function(node) {
             node.style.setProperty('display', 'none', 'important');
+        });
+        root.querySelectorAll('dialog, [role="dialog"], [aria-modal="true"]').forEach(function(node) {
+            var dialogText = (node.innerText || node.textContent || '').trim();
+            if (/home\s+screen\s+suggestions|select\s+the\s+languages|let's\s+go/i.test(dialogText)) {
+                node.style.setProperty('display', 'none', 'important');
+            }
         });
         root.querySelectorAll('h1,h2,h3,h4,h5,p,span,a,button,li').forEach(function(node) {
             var text = (node.innerText || node.textContent || '').trim().replace(/\s+/g, ' ');
@@ -3388,6 +3394,7 @@ class MainActivity : ComponentActivity() {
           var musicMode by remember { mutableStateOf("library") }
           var selectedSong by remember { mutableStateOf(kUniverseSongs[3]) }
           var isPlaying by remember { mutableStateOf(false) }
+          var lyricsVisible by remember { mutableStateOf(false) }
           var musicWebView by remember { mutableStateOf<WebView?>(null) }
 
           fun closeMusicBrowser() {
@@ -3458,11 +3465,22 @@ class MainActivity : ComponentActivity() {
                               TextButton(onClick = { }) { Text("⊖", color = Color.White, fontSize = 26.sp) }
                           }
                           Spacer(modifier = Modifier.height(22.dp))
-                          Text("LYRICS", color = Color.White, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-                          Text("⌄", color = Color.White, fontSize = 24.sp)
+                          TextButton(onClick = { lyricsVisible = !lyricsVisible }) {
+                              Text(if (lyricsVisible) "HIDE LYRICS" else "LYRICS", color = Color.White, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                          }
+                          Text(if (lyricsVisible) "⌃" else "⌄", color = Color.White, fontSize = 24.sp)
+                          if (lyricsVisible) {
+                              Card(modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {
+                                  Column(modifier = Modifier.padding(16.dp)) {
+                                      Text(selectedSong.title, color = Color.White, fontWeight = FontWeight.Bold)
+                                      Spacer(modifier = Modifier.height(8.dp))
+                                      Text("Lyrics will appear here when they are available for this song.", color = Color(0xFFB8C7BC), fontSize = 14.sp)
+                                  }
+                              }
+                          }
                       }
                       Row(modifier = Modifier.fillMaxWidth().background(Color(0xFF123A23)).padding(vertical = 5.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-                          TextButton(onClick = { musicMode = "library" }) { Text("⌂  Library", color = Color(0xFF8CF5A7), fontSize = 12.sp) }
+                          TextButton(onClick = { musicWebView?.stopLoading(); musicMode = "library" }) { Text("⌂  Library", color = Color(0xFF8CF5A7), fontSize = 12.sp) }
                           TextButton(onClick = { musicMode = "browse" }) { Text("⌕  Browse", color = Color(0xFFBDBDBD), fontSize = 12.sp) }
                           TextButton(onClick = { closeMusicBrowser() }) { Text("‹  Media", color = Color(0xFFBDBDBD), fontSize = 12.sp) }
                       }
