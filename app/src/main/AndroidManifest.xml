@@ -17,7 +17,7 @@
         android:usesCleartextTraffic="true"
         android:banner="@drawable/ktele_player_logo"
         android:icon="@drawable/ktele_player_logo"
-        android:label="K- Univese"
+        android:label="K Universe"
         android:roundIcon="@drawable/ktele_player_logo"
         android:supportsRtl="true"
         android:theme="@style/Theme.KTelePlayer">
