@@ -1782,13 +1782,13 @@ class MainActivity : ComponentActivity() {
     private var playing by mutableStateOf<VideoItem?>(null)
 
     private var browserOpen by mutableStateOf(false)
-    private var musicBrowserOpen by mutableStateOf(false)
+    private var musicBrowserOpen by mutableStateOf(true)
     private var selectedBrowserUrl by mutableStateOf<String?>(null)
     private var radioOnlyMode by mutableStateOf(false)
     private var malayalamRadioOpen by mutableStateOf(false)
     private var iptvOpen by mutableStateOf(false)
     private var settingsOpen by mutableStateOf(false)
-    private var homeOpen by mutableStateOf(true)
+    private var homeOpen by mutableStateOf(false)
     private var menuOpen by mutableStateOf(false)
     private var mediaHubOpen by mutableStateOf(false)
     private var telegramLoginOpen by mutableStateOf(false)
@@ -3859,7 +3859,7 @@ class MainActivity : ComponentActivity() {
 
       @Composable
       private fun MusicBrowserScreen() {
-          var musicMode by remember { mutableStateOf("library") }
+          var musicMode by remember { mutableStateOf("browse") }
           var selectedSong by remember { mutableStateOf(kUniverseSongs.getOrNull(3) ?: KUniverseSong("No song selected", "")) }
           var selectedGenre by remember { mutableStateOf<String?>(null) }
           var likedSongs by remember { mutableStateOf(kUniverseSongs.map { it.title }.toSet()) }
@@ -4130,7 +4130,7 @@ class MainActivity : ComponentActivity() {
                                    browseSearchMessage = null
                                }
                            },
-                           placeholder = { Text("Search all songs") },
+                           placeholder = { Text("മലയാള ഗാനങ്ങൾ ഇവിടെ ചർച്ച ചെയ്യുക") },
                            singleLine = true,
                            modifier = Modifier
                                .fillMaxWidth()
