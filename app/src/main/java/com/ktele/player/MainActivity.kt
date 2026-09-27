@@ -34,6 +34,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -2720,10 +2721,10 @@ class MainActivity : ComponentActivity() {
 
         LazyColumn(
             modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(max = 620.dp)
+                .fillMaxSize()
                 .padding(ui.screenPadding),
             verticalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = PaddingValues(bottom = 24.dp),
             userScrollEnabled = true
         ) {
             item {
@@ -2743,8 +2744,17 @@ class MainActivity : ComponentActivity() {
                         Text("Malayalam Radio", style = MaterialTheme.typography.headlineMedium)
                         Text("Malayalam FM radio stations online", color = Color(0xFFB9C2D0))
                     }
-                    TextButton(onClick = { closeRadio() }) {
-                        Text("Back")
+                    Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                        TextButton(
+                            onClick = {
+                                openInAppBrowser(MALAYALAM_RADIO_URL, radioOnly = true)
+                            }
+                        ) {
+                            Text("More stations")
+                        }
+                        TextButton(onClick = { closeRadio() }) {
+                            Text("Back")
+                        }
                     }
                 }
                 Spacer(modifier = Modifier.height(8.dp))
