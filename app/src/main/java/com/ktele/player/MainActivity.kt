@@ -49,6 +49,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -374,6 +376,43 @@ private fun resolveMusicTrack(song: KUniverseSong): ResolvedMusicTrack? {
     val images = track.optJSONArray("image")
     val imageUrl = images?.optJSONObject(images.length() - 1)?.optString("url")?.takeIf { it.isNotBlank() }
     return ResolvedMusicTrack(streamUrls, track.optInt("duration", 0), imageUrl)
+}
+
+private data class LyricLine(
+    val startTimeMs: Long?,
+    val text: String
+)
+
+private val lyricTimestampPattern = Regex("""\[(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?\]""")
+
+private fun parseLyrics(text: String): List<LyricLine> {
+    val lines = mutableListOf<LyricLine>()
+    for (rawLine in text.lines()) {
+        val timestamps = lyricTimestampPattern.findAll(rawLine).toList()
+        val lyricText = rawLine.replace(lyricTimestampPattern, "").trim()
+        if (lyricText.isBlank()) continue
+
+        if (timestamps.isEmpty()) {
+            lines += LyricLine(startTimeMs = null, text = lyricText)
+            continue
+        }
+
+        for (timestamp in timestamps) {
+            val minutes = timestamp.groupValues[1].toLongOrNull() ?: continue
+            val seconds = timestamp.groupValues[2].toLongOrNull() ?: continue
+            val fraction = timestamp.groupValues[3]
+            val fractionMs = when (fraction.length) {
+                1 -> fraction.toLong() * 100L
+                2 -> fraction.toLong() * 10L
+                else -> fraction.take(3).toLongOrNull() ?: 0L
+            }
+            lines += LyricLine(
+                startTimeMs = minutes * 60_000L + seconds * 1_000L + fractionMs,
+                text = lyricText
+            )
+        }
+    }
+    return lines
 }
 
 private fun detectMusicLanguage(query: String): String? {
@@ -4292,6 +4331,22 @@ class MainActivity : ComponentActivity() {
               }
           }
 
+           val parsedLyrics = remember(lyricsText) { parseLyrics(lyricsText.orEmpty()) }
+           val syncedLyrics = parsedLyrics.any { it.startTimeMs != null }
+           val activeLyricIndex = if (syncedLyrics && parsedLyrics.isNotEmpty()) {
+               parsedLyrics.indexOfLast { line ->
+                   line.startTimeMs?.let { it <= playbackPositionMs } == true
+               }.coerceAtLeast(0)
+           } else {
+               -1
+           }
+           val lyricsListState = rememberLazyListState()
+
+           LaunchedEffect(lyricsVisible, activeLyricIndex, parsedLyrics.size) {
+               if (lyricsVisible && activeLyricIndex >= 0) {
+                   lyricsListState.animateScrollToItem(activeLyricIndex)
+               }
+           }
           LaunchedEffect(selectedSong, lyricsVisible) {
               if (!lyricsVisible) return@LaunchedEffect
               lyricsLoading = true
@@ -4311,9 +4366,9 @@ class MainActivity : ComponentActivity() {
                           val stream = if (status in 200..299) connection.inputStream else connection.errorStream
                           val payload = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
                           if (status !in 200..299) throw IOException("Lyrics request failed: $status")
-                          val json = JSONObject(payload)
-                          json.optString("plainLyrics").takeIf { it.isNotBlank() }
-                              ?: json.optString("syncedLyrics").takeIf { it.isNotBlank() }
+                          json.optString("syncedLyrics").takeIf { it.isNotBlank() }
+                              ?: json.optString("plainLyrics").takeIf { it.isNotBlank() }
+                              ?: "Lyrics were not found for this song."
                               ?: "Lyrics were not found for this song."
                       } finally {
                           connection.disconnect()
@@ -4526,10 +4581,40 @@ class MainActivity : ComponentActivity() {
                                       Text(selectedSong.title, color = Color.White, fontWeight = FontWeight.Bold)
                                       Spacer(modifier = Modifier.height(8.dp))
                                       if (lyricsLoading) {
-                                          CircularProgressIndicator(color = Color(0xFF50E879), modifier = Modifier.size(28.dp))
-                                      } else {
-                                          Text(lyricsText ?: "Loading lyrics...", color = Color(0xFFB8C7BC), fontSize = 14.sp)
-                                      }
+                                           CircularProgressIndicator(color = Color(0xFF50E879), modifier = Modifier.size(28.dp))
+                                       } else if (parsedLyrics.isEmpty()) {
+                                           Text("Lyrics were not found for this song.", color = Color(0xFFB8C7BC), fontSize = 14.sp)
+                                       } else {
+                                           LazyColumn(
+                                               state = lyricsListState,
+                                               modifier = Modifier
+                                                   .fillMaxWidth()
+                                                   .height(360.dp),
+                                               verticalArrangement = Arrangement.spacedBy(2.dp),
+                                               contentPadding = PaddingValues(vertical = 4.dp)
+                                           ) {
+                                               itemsIndexed(
+                                                   parsedLyrics,
+                                                   key = { index, line ->
+                                                       "${line.startTimeMs ?: -1L}:$index:${line.text}"
+                                                   }
+                                               ) { index, line ->
+                                                   val isActiveLine = syncedLyrics && index == activeLyricIndex
+                                                   Text(
+                                                       text = line.text,
+                                                       color = if (isActiveLine) Color.White else Color(0xFFB8C7BC),
+                                                       fontSize = if (isActiveLine) 16.sp else 14.sp,
+                                                       fontWeight = if (isActiveLine) FontWeight.Bold else FontWeight.Normal,
+                                                       modifier = Modifier
+                                                           .fillMaxWidth()
+                                                           .background(
+                                                               if (isActiveLine) Color(0xFF1F6B42) else Color.Transparent
+                                                           )
+                                                           .padding(horizontal = 10.dp, vertical = 6.dp)
+                                                   )
+                                               }
+                                           }
+                                       }
                                   }
                               }
                           }
