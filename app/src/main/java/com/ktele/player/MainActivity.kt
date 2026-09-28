@@ -253,6 +253,7 @@ private data class KUniverseSong(
     val artist: String,
     val genres: Set<String> = emptySet(),
     val searchQuery: String = title,
+    val sourceId: String? = null,
     val streamUrl: String? = null,
     val durationSeconds: Int = 0,
     val imageUrl: String? = null,
@@ -264,7 +265,7 @@ private data class KUniverseSong(
 private val kUniverseSongs = emptyList<KUniverseSong>()
 
 private data class ResolvedMusicTrack(
-    val streamUrl: String,
+    val streamUrls: List<String>,
     val durationSeconds: Int,
     val imageUrl: String?
 )
@@ -279,6 +280,8 @@ private fun resolveMusicTrack(song: KUniverseSong): ResolvedMusicTrack? {
             readTimeout = 12_000
             setRequestProperty("Accept", "application/json")
             setRequestProperty("User-Agent", "K-Tele-Player/1.0")
+            setRequestProperty("Origin", MUSIC_SITE_URL)
+            setRequestProperty("Referer", MUSIC_SITE_URL)
         }
         return try {
             if (connection.responseCode !in 200..299) return null
@@ -290,39 +293,65 @@ private fun resolveMusicTrack(song: KUniverseSong): ResolvedMusicTrack? {
         }
     }
 
-    val query = Uri.encode(song.searchQuery + " " + song.artist)
-    val searchJson = requestJson(MUSIC_API_BASE_URL + "/search?query=" + query) ?: return null
-    val results = searchJson.optJSONObject("data")?.optJSONObject("songs")?.optJSONArray("results") ?: return null
-    if (results.length() == 0) return null
-    var match = results.optJSONObject(0) ?: return null
-    for (index in 0 until results.length()) {
-        val candidate = results.optJSONObject(index) ?: continue
-        val candidateTitle = candidate.optString("title")
-        if (candidateTitle.equals(song.searchQuery, ignoreCase = true) || candidateTitle.contains(song.searchQuery, ignoreCase = true)) {
-            match = candidate
-            break
+    var songId = song.sourceId
+    if (songId.isNullOrBlank()) {
+        val query = Uri.encode(song.searchQuery + " " + song.artist)
+        val searchJson = requestJson(MUSIC_API_BASE_URL + "/search?query=" + query) ?: return null
+        val results = searchJson.optJSONObject("data")?.optJSONObject("songs")?.optJSONArray("results")
+            ?: return null
+        if (results.length() == 0) return null
+        var match = results.optJSONObject(0) ?: return null
+        for (index in 0 until results.length()) {
+            val candidate = results.optJSONObject(index) ?: continue
+            val candidateTitle = candidate.optString("title")
+            if (
+                candidateTitle.equals(song.searchQuery, ignoreCase = true) ||
+                candidateTitle.contains(song.searchQuery, ignoreCase = true)
+            ) {
+                match = candidate
+                break
+            }
+        }
+        songId = match.optString("id").takeIf { it.isNotBlank() }
+    }
+    val detailJson = songId?.let {
+        requestJson(MUSIC_API_BASE_URL + "/songs/" + Uri.encode(it))
+    } ?: return null
+    val data = detailJson.opt("data")
+    val track = when (data) {
+        is org.json.JSONArray -> data.optJSONObject(0)
+        is JSONObject -> data
+        else -> null
+    } ?: return null
+
+    val downloads = track.optJSONArray("downloadUrl")
+        ?: track.optJSONArray("download_url")
+    val streamCandidates = mutableListOf<Pair<Int, String>>()
+    if (downloads != null) {
+        for (index in 0 until downloads.length()) {
+            val download = downloads.optJSONObject(index) ?: continue
+            val url = download.optString("url").trim()
+            if (!url.startsWith("http", ignoreCase = true)) continue
+            val bitrate = Regex("(\\d+)")
+                .find(download.optString("quality"))
+                ?.groupValues
+                ?.getOrNull(1)
+                ?.toIntOrNull()
+                ?: 0
+            streamCandidates += bitrate to url
         }
     }
-    val songId = match.optString("id").takeIf { it.isNotBlank() } ?: return null
-    val detailJson = requestJson(MUSIC_API_BASE_URL + "/songs/" + Uri.encode(songId)) ?: return null
-    val track = detailJson.optJSONArray("data")?.optJSONObject(0) ?: return null
-    val downloads = track.optJSONArray("downloadUrl") ?: return null
-    var streamUrl = ""
-    var bestBitrate = -1
-    for (index in 0 until downloads.length()) {
-        val download = downloads.optJSONObject(index) ?: continue
-        val url = download.optString("url")
-        if (url.isBlank()) continue
-        val bitrate = Regex("(\\d+)").find(download.optString("quality"))?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 0
-        if (bitrate >= bestBitrate) {
-            bestBitrate = bitrate
-            streamUrl = url
-        }
+    track.optString("url").trim().takeIf { it.startsWith("http", ignoreCase = true) }?.let {
+        streamCandidates += 0 to it
     }
-    if (streamUrl.isBlank()) return null
+    val streamUrls = streamCandidates
+        .sortedByDescending { it.first }
+        .map { it.second }
+        .distinct()
+    if (streamUrls.isEmpty()) return null
     val images = track.optJSONArray("image")
     val imageUrl = images?.optJSONObject(images.length() - 1)?.optString("url")?.takeIf { it.isNotBlank() }
-    return ResolvedMusicTrack(streamUrl, track.optInt("duration", 0), imageUrl)
+    return ResolvedMusicTrack(streamUrls, track.optInt("duration", 0), imageUrl)
 }
 
 private fun detectMusicLanguage(query: String): String? {
@@ -352,6 +381,8 @@ private fun searchMusicSongs(
             readTimeout = 12_000
             setRequestProperty("Accept", "application/json")
             setRequestProperty("User-Agent", "K-Tele-Player/1.0")
+            setRequestProperty("Origin", MUSIC_SITE_URL)
+            setRequestProperty("Referer", MUSIC_SITE_URL)
         }
         return try {
             if (connection.responseCode !in 200..299) return null
@@ -445,6 +476,7 @@ private fun searchMusicSongs(
                     title = title,
                     artist = artist,
                     searchQuery = title,
+                    sourceId = result.optString("id").trim().takeIf { it.isNotBlank() },
                     imageUrl = imageUrl,
                     resultType = resultType,
                     language = resultLanguage.ifBlank { detectedLanguage },
@@ -3978,11 +4010,35 @@ class MainActivity : ComponentActivity() {
            var browseSearchLoading by remember { mutableStateOf(false) }
            var browseSearchMessage by remember { mutableStateOf<String?>(null) }
            var browseSearchSubmitted by remember { mutableStateOf(false) }
+           var musicQueue by remember { mutableStateOf<List<KUniverseSong>>(emptyList()) }
            val browseSearchFocusRequester = remember { FocusRequester() }
           var musicWebView by remember { mutableStateOf<WebView?>(null) }
           val musicContext = LocalContext.current
           val musicScope = rememberCoroutineScope()
-          val musicPlayer = remember(musicContext) { ExoPlayer.Builder(musicContext).build() }
+          val musicPlayer = remember(musicContext) {
+              val httpDataSource = DefaultHttpDataSource.Factory()
+                  .setUserAgent("K-Tele-Player/1.0")
+                  .setAllowCrossProtocolRedirects(true)
+                  .setConnectTimeoutMs(15_000)
+                  .setReadTimeoutMs(30_000)
+              ExoPlayer.Builder(musicContext)
+                  .setMediaSourceFactory(
+                      DefaultMediaSourceFactory(
+                          DefaultDataSource.Factory(musicContext, httpDataSource)
+                      )
+                  )
+                  .build()
+                  .apply {
+                      setAudioAttributes(
+                          AudioAttributes.Builder()
+                              .setUsage(C.USAGE_MEDIA)
+                              .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                              .build(),
+                          true
+                      )
+                      setHandleAudioBecomingNoisy(true)
+                  }
+          }
 
           DisposableEffect(musicPlayer) {
               val listener = object : Player.Listener {
@@ -3997,9 +4053,16 @@ class MainActivity : ComponentActivity() {
                       }
                   }
                   override fun onPlayerError(error: PlaybackException) {
-                      isLoadingSong = false
-                      isPlaying = false
-                      playbackError = "This song could not be played right now."
+                      if (musicPlayer.hasNextMediaItem()) {
+                          isLoadingSong = true
+                          playbackError = "Trying another audio quality…"
+                          musicPlayer.seekToNextMediaItem()
+                          musicPlayer.playWhenReady = true
+                      } else {
+                          isLoadingSong = false
+                          isPlaying = false
+                          playbackError = "This song could not be played right now (${error.errorCodeName})."
+                      }
                   }
               }
               musicPlayer.addListener(listener)
@@ -4052,6 +4115,7 @@ class MainActivity : ComponentActivity() {
                    } else {
                        null
                    }
+                   musicQueue = results.filter { it.resultType == "song" }
                }
            }
 
@@ -4068,8 +4132,18 @@ class MainActivity : ComponentActivity() {
                       playbackError = "Audio is not available for this song right now."
                       return@launch
                   }
-                  selectedSong = song.copy(streamUrl = resolved.streamUrl, durationSeconds = resolved.durationSeconds, imageUrl = resolved.imageUrl)
-                  musicPlayer.setMediaItem(MediaItem.fromUri(resolved.streamUrl))
+                  selectedSong = song.copy(
+                      streamUrl = resolved.streamUrls.firstOrNull(),
+                      durationSeconds = resolved.durationSeconds,
+                      imageUrl = resolved.imageUrl
+                  )
+                  musicPlayer.setMediaItems(
+                      resolved.streamUrls.map { streamUrl ->
+                          MediaItem.Builder()
+                              .setUri(streamUrl)
+                              .build()
+                      }
+                  )
                   musicPlayer.prepare()
                   musicPlayer.playWhenReady = true
               }
@@ -4085,10 +4159,11 @@ class MainActivity : ComponentActivity() {
           }
 
           fun playAdjacentSong(offset: Int) {
-              val currentIndex = kUniverseSongs.indexOfFirst { it.title == selectedSong.title }
+              if (musicQueue.isEmpty()) return
+              val currentIndex = musicQueue.indexOfFirst { it.title == selectedSong.title }
               val baseIndex = if (currentIndex >= 0) currentIndex else 0
-              val nextIndex = (baseIndex + offset + kUniverseSongs.size) % kUniverseSongs.size
-              openSong(kUniverseSongs[nextIndex])
+              val nextIndex = (baseIndex + offset + musicQueue.size) % musicQueue.size
+              openSong(musicQueue[nextIndex])
           }
 
           BackHandler {
