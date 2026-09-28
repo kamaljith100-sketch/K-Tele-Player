@@ -275,6 +275,128 @@ private data class ResolvedMusicTrack(
 
 private const val MUSIC_API_BASE_URL = "https://music-api.albatross0071.workers.dev/api"
 
+
+private fun musicApiJson(url: String): JSONObject? {
+    val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+        requestMethod = "GET"
+        connectTimeout = 12_000
+        readTimeout = 12_000
+        setRequestProperty("Accept", "application/json")
+        setRequestProperty("User-Agent", "K-Tele-Player/1.0")
+        setRequestProperty("Origin", MUSIC_SITE_URL)
+        setRequestProperty("Referer", MUSIC_SITE_URL)
+    }
+    return try {
+        if (connection.responseCode !in 200..299) return null
+        JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+    } catch (_: Exception) {
+        null
+    } finally {
+        connection.disconnect()
+    }
+}
+
+private fun parseMusicSongResult(
+    result: JSONObject,
+    fallbackLanguage: String? = null,
+    fallbackArtist: String? = null
+): KUniverseSong? {
+    val title = listOf(result.optString("name"), result.optString("title"))
+        .map { it.trim() }
+        .firstOrNull { it.isNotBlank() }
+        ?: return null
+    val artists = result.optJSONObject("artists")?.optJSONArray("primary")
+    val primaryArtists = buildList {
+        if (artists != null) {
+            for (index in 0 until artists.length()) {
+                artists.optJSONObject(index)?.optString("name")
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let(::add)
+            }
+        }
+    }
+    val artist = primaryArtists.joinToString(", ").ifBlank {
+        listOf(
+            result.optString("primaryArtists"),
+            result.optString("artist"),
+            fallbackArtist.orEmpty(),
+            "Unknown artist"
+        ).map { it.trim() }.firstOrNull { it.isNotBlank() } ?: "Unknown artist"
+    }
+    val images = result.optJSONArray("image")
+    val imageUrl = images
+        ?.optJSONObject(images.length() - 1)
+        ?.optString("url")
+        ?.takeIf { it.isNotBlank() }
+        ?: result.optString("image").trim().takeIf { it.startsWith("http") }
+    val language = result.optString("language").trim().ifBlank { fallbackLanguage }
+    val description = listOf(
+        result.optString("description"),
+        result.optString("subtitle"),
+        result.optString("album")
+    ).map { it.trim() }.firstOrNull { it.isNotBlank() }
+    return KUniverseSong(
+        title = title,
+        artist = artist,
+        searchQuery = title,
+        sourceId = result.optString("id").trim().takeIf { it.isNotBlank() },
+        durationSeconds = result.optInt("duration", 0),
+        imageUrl = imageUrl,
+        resultType = "song",
+        language = language,
+        description = description
+    )
+}
+
+private fun loadMusicCollectionSongs(collection: KUniverseSong): List<KUniverseSong> {
+    val sourceId = collection.sourceId?.takeIf { it.isNotBlank() } ?: return emptyList()
+    val endpoint = when (collection.resultType) {
+        "playlist" -> MUSIC_API_BASE_URL + "/playlists?id=" + Uri.encode(sourceId) + "&page=0&limit=50"
+        "album" -> MUSIC_API_BASE_URL + "/albums?id=" + Uri.encode(sourceId)
+        "artist" -> MUSIC_API_BASE_URL + "/artists/" + Uri.encode(sourceId) + "/songs?page=0&songCount=50"
+        else -> return emptyList()
+    }
+    val payload = musicApiJson(endpoint) ?: return emptyList()
+    val data = payload.opt("data")
+    val songs = when (data) {
+        is JSONObject -> data.optJSONArray("songs") ?: data.optJSONArray("results")
+        is org.json.JSONArray -> data
+        else -> null
+    } ?: return emptyList()
+    val tracks = mutableListOf<KUniverseSong>()
+    for (index in 0 until songs.length()) {
+        val track = songs.optJSONObject(index) ?: continue
+        parseMusicSongResult(
+            track,
+            fallbackLanguage = collection.language,
+            fallbackArtist = collection.artist
+        )?.let { tracks += it }
+    }
+    return tracks.distinctBy { it.sourceId ?: (it.title + "|" + it.artist) }
+}
+
+private fun loadRelatedMusicSongs(song: KUniverseSong): List<KUniverseSong> {
+    val sourceId = song.sourceId?.takeIf { it.isNotBlank() } ?: return emptyList()
+    val payload = musicApiJson(
+        MUSIC_API_BASE_URL + "/songs/" + Uri.encode(sourceId) + "/suggestions?limit=20"
+    ) ?: return emptyList()
+    val data = payload.opt("data")
+    val suggestions = when (data) {
+        is org.json.JSONArray -> data
+        is JSONObject -> data.optJSONArray("songs") ?: data.optJSONArray("results")
+        else -> null
+    } ?: return emptyList()
+    val related = mutableListOf<KUniverseSong>()
+    for (index in 0 until suggestions.length()) {
+        val result = suggestions.optJSONObject(index) ?: continue
+        parseMusicSongResult(result, fallbackLanguage = song.language)?.let { related += it }
+    }
+    return related
+        .filterNot { it.sourceId == song.sourceId }
+        .distinctBy { it.sourceId ?: (it.title + "|" + it.artist) }
+}
+
 private fun resolveMusicTrack(song: KUniverseSong): ResolvedMusicTrack? {
     fun requestJson(url: String): JSONObject? {
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
@@ -4233,38 +4355,58 @@ class MainActivity : ComponentActivity() {
                }
            }
 
-          fun openSong(song: KUniverseSong) {
-              if (song.resultType == "song" && musicQueue.none {
-                      it.sourceId == song.sourceId && it.title == song.title
-                  }) {
-                  musicQueue = (musicQueue + song).distinctBy {
-                      it.sourceId ?: "${it.title}\u0000${it.artist}"
-                  }
-              }
-              selectedSong = song
-              musicMode = "now"
-              isLoadingSong = true
-              playbackError = null
-              musicScope.launch {
-                  val resolved = withContext(Dispatchers.IO) { resolveMusicTrack(song) }
-                  if (resolved == null) {
-                      isLoadingSong = false
-                      isPlaying = false
-                      playbackError = "Audio is not available for this song right now."
-                      return@launch
-                  }
-                  selectedSong = song.copy(
-                      streamUrl = resolved.streamUrls.firstOrNull(),
-                      durationSeconds = resolved.durationSeconds,
-                      imageUrl = resolved.imageUrl
-                  )
-                  qualityFallbackUrls = resolved.streamUrls
-                  qualityFallbackIndex = 0
-                  musicPlayer.setMediaItem(MediaItem.fromUri(resolved.streamUrls.first()))
-                  musicPlayer.prepare()
-                  musicPlayer.playWhenReady = true
-              }
-          }
+           fun openSong(song: KUniverseSong) {
+               if (song.resultType != "song") {
+                   browseSearchQuery = song.title
+                   browseSearchSubmitted = true
+                   browseSearchLoading = true
+                   browseSearchMessage = null
+                   musicScope.launch {
+                       val tracks = withContext(Dispatchers.IO) {
+                           loadMusicCollectionSongs(song)
+                       }
+                       browseSearchLoading = false
+                       browseSearchResults = tracks
+                       musicQueue = tracks
+                       browseSearchMessage = if (tracks.isEmpty()) {
+                           "No tracks found in " + song.resultType + "."
+                       } else {
+                           null
+                       }
+                   }
+                   return
+               }
+               if (musicQueue.none {
+                       it.sourceId == song.sourceId && it.title == song.title
+                   }) {
+                   musicQueue = (musicQueue + song).distinctBy {
+                       it.sourceId ?: (it.title + "|" + it.artist)
+                   }
+               }
+               selectedSong = song
+               musicMode = "now"
+               isLoadingSong = true
+               playbackError = null
+               musicScope.launch {
+                   val resolved = withContext(Dispatchers.IO) { resolveMusicTrack(song) }
+                   if (resolved == null) {
+                       isLoadingSong = false
+                       isPlaying = false
+                       playbackError = "Audio is not available for this song right now."
+                       return@launch
+                   }
+                   selectedSong = song.copy(
+                       streamUrl = resolved.streamUrls.firstOrNull(),
+                       durationSeconds = resolved.durationSeconds,
+                       imageUrl = resolved.imageUrl
+                   )
+                   qualityFallbackUrls = resolved.streamUrls
+                   qualityFallbackIndex = 0
+                   musicPlayer.setMediaItem(MediaItem.fromUri(resolved.streamUrls.first()))
+                   musicPlayer.prepare()
+                   musicPlayer.playWhenReady = true
+               }
+           }
 
           fun togglePlayback() {
               if (isLoadingSong) return
@@ -4275,43 +4417,68 @@ class MainActivity : ComponentActivity() {
               } else if (musicPlayer.isPlaying) musicPlayer.pause() else musicPlayer.play()
           }
 
-          fun playAdjacentSong(offset: Int) {
-              val queue = (musicQueue + browseSearchResults.filter { it.resultType == "song" })
-                  .distinctBy { it.sourceId ?: "${it.title}\u0000${it.artist}" }
-              if (queue.isEmpty()) return
-              val currentIndex = queue.indexOfFirst {
-                  (it.sourceId != null && it.sourceId == selectedSong.sourceId) ||
-                      (it.sourceId == null && it.title == selectedSong.title && it.artist == selectedSong.artist)
-              }
-              val baseIndex = if (currentIndex >= 0) currentIndex else 0
-              val nextIndex = (baseIndex + offset + queue.size) % queue.size
-              openSong(queue[nextIndex])
-          }
+           fun loadAndPlayRelatedSong() {
+               val currentSong = selectedSong
+               isLoadingSong = true
+               playbackError = null
+               musicScope.launch {
+                   val related = withContext(Dispatchers.IO) {
+                       loadRelatedMusicSongs(currentSong)
+                   }
+                   val existingKeys = musicQueue.map { musicSongKey(it) }.toSet()
+                   val fresh = related.filterNot { musicSongKey(it) in existingKeys }
+                   if (fresh.isEmpty()) {
+                       isLoadingSong = false
+                       isPlaying = false
+                       playbackPositionMs = 0L
+                       playbackError = "No more related songs are available right now."
+                   } else {
+                       musicQueue = (musicQueue + fresh).distinctBy { musicSongKey(it) }
+                       openSong(fresh.first())
+                   }
+               }
+           }
 
-          playNextRelatedSong = {
-              val queue = (musicQueue + browseSearchResults.filter { it.resultType == "song" })
-                  .distinctBy { it.sourceId ?: "${it.title}\u0000${it.artist}" }
-              if (queue.isEmpty()) {
-                  isPlaying = false
-                  playbackPositionMs = 0L
-              } else {
-                  val currentIndex = queue.indexOfFirst {
-                      (it.sourceId != null && it.sourceId == selectedSong.sourceId) ||
-                          (it.sourceId == null && it.title == selectedSong.title && it.artist == selectedSong.artist)
-                  }
-                  val nextIndex = if (shuffleEnabled && queue.size > 1) {
-                      (queue.indices.filter { it != currentIndex }.random())
-                  } else {
-                      (currentIndex + 1 + queue.size) % queue.size
-                  }
-                  if (repeatMode == Player.REPEAT_MODE_OFF && queue.size == 1 && currentIndex >= 0) {
-                      isPlaying = false
-                      playbackPositionMs = 0L
-                  } else {
-                      openSong(queue[nextIndex])
-                  }
-              }
-          }
+           fun playAdjacentSong(offset: Int) {
+               val queue = (musicQueue + browseSearchResults.filter { it.resultType == "song" })
+                   .distinctBy { it.sourceId ?: (it.title + "|" + it.artist) }
+               if (queue.isEmpty()) {
+                   if (offset > 0) loadAndPlayRelatedSong()
+                   return
+               }
+               val currentIndex = queue.indexOfFirst {
+                   (it.sourceId != null && it.sourceId == selectedSong.sourceId) ||
+                       (it.sourceId == null && it.title == selectedSong.title && it.artist == selectedSong.artist)
+               }
+               if (offset > 0 && currentIndex >= 0 && currentIndex == queue.lastIndex) {
+                   loadAndPlayRelatedSong()
+                   return
+               }
+               val baseIndex = if (currentIndex >= 0) currentIndex else 0
+               val nextIndex = (baseIndex + offset + queue.size) % queue.size
+               openSong(queue[nextIndex])
+           }
+
+           playNextRelatedSong = {
+               val queue = (musicQueue + browseSearchResults.filter { it.resultType == "song" })
+                   .distinctBy { it.sourceId ?: (it.title + "|" + it.artist) }
+               val currentIndex = queue.indexOfFirst {
+                   (it.sourceId != null && it.sourceId == selectedSong.sourceId) ||
+                       (it.sourceId == null && it.title == selectedSong.title && it.artist == selectedSong.artist)
+               }
+               when {
+                   shuffleEnabled && queue.size > 1 -> {
+                       openSong(queue[queue.indices.filter { it != currentIndex }.random()])
+                   }
+                   currentIndex >= 0 && currentIndex + 1 < queue.size -> {
+                       openSong(queue[currentIndex + 1])
+                   }
+                   repeatMode == Player.REPEAT_MODE_ALL && queue.isNotEmpty() -> {
+                       openSong(queue.first())
+                   }
+                   else -> loadAndPlayRelatedSong()
+               }
+           }
 
           BackHandler {
               when {
