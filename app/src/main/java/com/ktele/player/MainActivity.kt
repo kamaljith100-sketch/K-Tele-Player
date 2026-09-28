@@ -4366,6 +4366,7 @@ class MainActivity : ComponentActivity() {
                           val stream = if (status in 200..299) connection.inputStream else connection.errorStream
                           val payload = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
                           if (status !in 200..299) throw IOException("Lyrics request failed: $status")
+                          val json = JSONObject(payload)
                           json.optString("syncedLyrics").takeIf { it.isNotBlank() }
                               ?: json.optString("plainLyrics").takeIf { it.isNotBlank() }
                               ?: "Lyrics were not found for this song."
