@@ -1106,7 +1106,7 @@ private suspend fun loadMalayalamRadioDirectory(): List<MalayalamRadioStation> =
             // a few malformed anchors; stopping at the first </div> can otherwise
             // pair one station's link with the next station's name or artwork.
             val stationCardPattern = Regex(
-                """<div\b[^>]*class\s*=\s*[\"'][^\"']*grid_1_of_2[^\"']*[\"'][^>]*>([\s\S]*?)(?=<div\b[^>]*class\s*=\s*[\"'][^\"']*grid_1_of_2[^\"']*[\"']|$)""",
+                """<div\b[^>]*class\s*=\s*[\"'][^\"']*grid_1_of_2[^\"']*[\"'][^>]*>([\s\S]*?)(?=<div\b[^>]*class\s*=\s*[\"'][^\"']*grid_1_of_2[^\"']*[\"']|\z)""",
                 RegexOption.IGNORE_CASE
             )
             val stationLinkPattern = Regex(
