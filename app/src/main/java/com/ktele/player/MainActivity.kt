@@ -163,8 +163,28 @@ private class MediaPlaybackNotificationController(
         private const val CHANNEL_ID = "k_universe_media"
         private const val NOTIFICATION_ID = 7001
     }
+    /**
+     * SystemUI renders media artwork inside a compact square slot. The app logo
+     * is also used as the launcher/banner artwork and can be wider than that
+     * slot, so prepare a square, high-resolution copy for the notification.
+     * This keeps the K Universe mark readable instead of letterboxing it into
+     * a narrow thumbnail.
+     */
     private val artwork: Bitmap? by lazy {
         BitmapFactory.decodeResource(activity.resources, R.drawable.ktele_player_logo)
+            ?.let(::createNotificationArtwork)
+    }
+
+    private fun createNotificationArtwork(source: Bitmap): Bitmap {
+        val side = minOf(source.width, source.height)
+        val left = (source.width - side) / 2
+        val top = (source.height - side) / 2
+        val square = Bitmap.createBitmap(source, left, top, side, side)
+        return if (square.width == 512 && square.height == 512) {
+            square
+        } else {
+            Bitmap.createScaledBitmap(square, 512, 512, true)
+        }
     }
     private val notificationManager: PlayerNotificationManager
     private var activePlayer: Player? = null
