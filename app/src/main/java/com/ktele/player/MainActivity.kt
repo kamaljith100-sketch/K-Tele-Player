@@ -4312,6 +4312,11 @@ class MainActivity : ComponentActivity() {
                   Column(modifier = Modifier.fillMaxSize().background(Color(0xFF0B2818))) {
                       Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                           TextButton(onClick = { musicMode = "browse" }) { Text("‹", color = Color.White, fontSize = 32.sp) }
+                          AppLogo(
+                              modifier = Modifier
+                                  .size(42.dp)
+                                  .padding(horizontal = 3.dp)
+                          )
                           Text("NOW PLAYING", color = Color.White, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                           Box {
                               TextButton(
@@ -5321,6 +5326,11 @@ class MainActivity : ComponentActivity() {
                     .background(Color(0xFF08080B))
                     .padding(horizontal = 24.dp)
             ) {
+                AppLogo(
+                    modifier = Modifier
+                        .size(96.dp)
+                        .align(Alignment.CenterHorizontally)
+                )
                 Spacer(modifier = Modifier.height(24.dp))
 
                 OutlinedTextField(
@@ -5388,8 +5398,10 @@ class MainActivity : ComponentActivity() {
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
+                    AppLogo(modifier = Modifier.size(36.dp))
+                    Spacer(modifier = Modifier.weight(1f))
                     if (currentIsBookmarked) {
                         TextButton(onClick = { deleteBookmark(currentBookmark) }) {
                             Text("Delete Bookmark")
