@@ -870,6 +870,17 @@ data class IptvChannel(
     val referrer: String? = null
 )
 
+private data class OttMovieSource(
+    val name: String,
+    val url: String
+)
+
+private val ottMovieSources = listOf(
+    OttMovieSource("AutoEmbed", "https://watch-v2.autoembed.app/"),
+    OttMovieSource("NetMirror", "https://netmirror.center/"),
+    OttMovieSource("Cineby Movies", "https://cineby.my/movies")
+)
+
 private data class MalayalamRadioStation(
     val name: String,
     val frequency: String,
@@ -5569,6 +5580,32 @@ class MainActivity : ComponentActivity() {
                     Spacer(modifier = Modifier.height(14.dp))
                     Button(onClick = { openMusicInAppBrowser() }) {
                         Text("Open Music")
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(ui.cardPadding)) {
+                    Text("OTT Movies", style = MaterialTheme.typography.titleLarge)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        "Browse OTT movie websites inside the app.",
+                        color = Color(0xFFB9C2D0)
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+                    ottMovieSources.forEach { source ->
+                        TextButton(
+                            onClick = {
+                                mediaHubOpen = false
+                                selectedBrowserUrl = source.url
+                                browserOpen = true
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(source.name, modifier = Modifier.fillMaxWidth())
+                        }
                     }
                 }
             }
