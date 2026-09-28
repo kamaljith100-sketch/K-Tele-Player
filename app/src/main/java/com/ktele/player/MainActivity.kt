@@ -1691,6 +1691,19 @@ private fun isBlockedAdRequest(rawUrl: String): Boolean {
     return BLOCKED_AD_HOST_MARKERS.any { host == it || host.endsWith(".$it") } ||
         BLOCKED_AD_PATH_MARKERS.any { lowerUrl.contains(it) }
 }
+private const val AUTOEMBED_START_WATCHING_HOOK = """
+(function() {
+    if (window.__kteleAutoEmbedStartHook) return;
+    window.__kteleAutoEmbedStartHook = true;
+    document.addEventListener('click', function(event) {
+        var link = event.target.closest && event.target.closest('a[href="/home"]');
+        if (!link) return;
+        event.preventDefault();
+        window.location.href = new URL('/home', window.location.origin).toString();
+    }, true);
+})();
+"""
+
 private const val AD_CLEANUP_HOOK = """
 (function() {
     if (window.__kteleAdCleanupInstalled) return;
@@ -5298,6 +5311,9 @@ class MainActivity : ComponentActivity() {
                                            }
                                            override fun onPageFinished(view: WebView, url: String) {
                                                view.evaluateJavascript(AD_CLEANUP_HOOK, null)
+                                 if (isAutoEmbedUrl(url)) {
+                                     view.evaluateJavascript(AUTOEMBED_START_WATCHING_HOOK, null)
+                                 }
                                  view.evaluateJavascript("(function(){ if (window.__kteleWindowOpenHook) return; window.__kteleWindowOpenHook = true; window.open = function(url){ if (url) window.location.href = url; return window; }; })();", null)
                                                view.evaluateJavascript(MUSIC_BRANDING_HOOK, null)
                                            }
