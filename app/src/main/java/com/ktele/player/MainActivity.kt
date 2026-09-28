@@ -3759,13 +3759,13 @@ class MainActivity : ComponentActivity() {
                 favoriteKeys + key
             }
             favoritePreferences.edit().putStringSet("station_keys", favoriteKeys).apply()
+        }
 
         fun openStationPage(station: MalayalamRadioStation) {
             val pageUrl = station.pageUrl ?: return
             runCatching {
                 context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(pageUrl)))
             }
-        }
         }
 
         val normalizedSearchQuery = searchQuery.trim().lowercase()
@@ -4001,7 +4001,7 @@ class MainActivity : ComponentActivity() {
                         isLoading = loadingStationName == station.name,
                         isFavorite = favoriteKeys.contains(malayalamRadioFavoriteKey(station)),
                         onPlayPause = { startStation(station) },
-                        onToggleFavorite = { toggleFavorite(station) }
+                        onToggleFavorite = { toggleFavorite(station) },
                         onOpenPage = { openStationPage(station) }
                     )
                 }
