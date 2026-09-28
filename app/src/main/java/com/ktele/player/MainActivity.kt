@@ -877,7 +877,7 @@ private data class OttMovieSource(
 )
 
 private val ottMovieSources = listOf(
-    OttMovieSource("AutoEmbed", "https://watch-v2.autoembed.app/"),
+    OttMovieSource("AutoEmbed", "https://watch-v2.autoembed.app/home"),
     OttMovieSource("NetMirror", "https://netmirror.center/"),
     OttMovieSource("Cineby Movies", "https://cineby.my/movies")
 )
