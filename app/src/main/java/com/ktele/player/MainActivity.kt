@@ -21,6 +21,7 @@ import android.os.SystemClock
 import android.view.View
 import android.view.WindowManager
 import android.webkit.JavascriptInterface
+import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -1675,14 +1676,21 @@ private val BLOCKED_AD_PATH_MARKERS = listOf(
     "googletagservices", "ad_script", "adsbygoogle"
 )
 
+private fun isAutoEmbedUrl(rawUrl: String): Boolean {
+    val host = runCatching { Uri.parse(rawUrl).host?.lowercase() }.getOrNull()
+        ?: return false
+    return host == "autoembed.app" || host.endsWith(".autoembed.app")
+}
+
 private fun isBlockedAdRequest(rawUrl: String): Boolean {
+    if (isAutoEmbedUrl(rawUrl)) return false
+
     val parsed = runCatching { Uri.parse(rawUrl) }.getOrNull() ?: return false
     val host = parsed.host?.lowercase() ?: return false
     val lowerUrl = rawUrl.lowercase()
     return BLOCKED_AD_HOST_MARKERS.any { host == it || host.endsWith(".$it") } ||
         BLOCKED_AD_PATH_MARKERS.any { lowerUrl.contains(it) }
 }
-
 private const val AD_CLEANUP_HOOK = """
 (function() {
     if (window.__kteleAdCleanupInstalled) return;
@@ -5290,6 +5298,7 @@ class MainActivity : ComponentActivity() {
                                            }
                                            override fun onPageFinished(view: WebView, url: String) {
                                                view.evaluateJavascript(AD_CLEANUP_HOOK, null)
+                                 view.evaluateJavascript("(function(){ if (window.__kteleWindowOpenHook) return; window.__kteleWindowOpenHook = true; window.open = function(url){ if (url) window.location.href = url; return window; }; })();", null)
                                                view.evaluateJavascript(MUSIC_BRANDING_HOOK, null)
                                            }
                                        }
@@ -5918,15 +5927,23 @@ class MainActivity : ComponentActivity() {
                 factory = { viewContext ->
                     WebView(viewContext).apply {
                         settings.javaScriptEnabled = true
-                        settings.javaScriptCanOpenWindowsAutomatically = false
+                        settings.javaScriptCanOpenWindowsAutomatically = true
                         settings.setSupportMultipleWindows(false)
                         settings.domStorageEnabled = true
+                        settings.databaseEnabled = true
                         settings.loadWithOverviewMode = true
                         settings.useWideViewPort = true
                         settings.mediaPlaybackRequiresUserGesture = false
                         settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
                         settings.allowContentAccess = true
                         settings.allowFileAccess = true
+                        settings.cacheMode = WebSettings.LOAD_DEFAULT
+                        settings.userAgentString = settings.userAgentString
+                            .replace("; wv", "")
+                            .replace("Version/4.0 ", "")
+                        val cookieManager = CookieManager.getInstance()
+                        cookieManager.setAcceptCookie(true)
+                        cookieManager.setAcceptThirdPartyCookies(this, true)
                         webChromeClient = WebChromeClient()
                         addJavascriptInterface(object {
                             @JavascriptInterface
