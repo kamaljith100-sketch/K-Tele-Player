@@ -2,13 +2,19 @@ package com.ktele.player
 
 import android.app.Activity
 import android.app.DownloadManager
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Color as AndroidColor
 import android.content.pm.ActivityInfo
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.os.SystemClock
@@ -101,6 +107,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -117,7 +124,9 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.CaptionStyleCompat
+import androidx.media3.ui.PlayerNotificationManager
 import androidx.media3.ui.PlayerView
+import androidx.media3.session.MediaSession
 
 import org.json.JSONObject
 
@@ -145,6 +154,79 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.ceil
+
+
+private class MediaPlaybackNotificationController(
+    private val activity: Activity
+) {
+    companion object {
+        private const val CHANNEL_ID = "k_universe_media"
+        private const val NOTIFICATION_ID = 7001
+    }
+    private val artwork: Bitmap? by lazy {
+        BitmapFactory.decodeResource(activity.resources, R.drawable.ktele_player_logo)
+    }
+    private val notificationManager: PlayerNotificationManager
+    private var activePlayer: Player? = null
+    private var mediaSession: MediaSession? = null
+    init {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "K Universe media playback",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Playback controls for K Universe audio and video"
+                setShowBadge(false)
+            }
+            activity.getSystemService(NotificationManager::class.java)
+                ?.createNotificationChannel(channel)
+        }
+        notificationManager = PlayerNotificationManager.Builder(
+            activity, NOTIFICATION_ID, CHANNEL_ID
+        ).setMediaDescriptionAdapter(
+            object : PlayerNotificationManager.MediaDescriptionAdapter {
+                override fun getCurrentContentTitle(player: Player): CharSequence =
+                    player.mediaMetadata.title ?: "K Universe"
+                override fun getCurrentContentText(player: Player): CharSequence? =
+                    player.mediaMetadata.artist ?: player.mediaMetadata.albumTitle
+                override fun createCurrentContentIntent(player: Player): PendingIntent =
+                    PendingIntent.getActivity(
+                        activity,
+                        NOTIFICATION_ID,
+                        Intent(activity, MainActivity::class.java).apply {
+                            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                        },
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                    )
+                override fun getCurrentLargeIcon(
+                    player: Player,
+                    callback: PlayerNotificationManager.BitmapCallback
+                ): Bitmap? = artwork
+            }
+        ).setSmallIconResourceId(R.drawable.ktele_player_logo).build()
+    }
+    fun attach(player: Player) {
+        if (activePlayer === player) return
+        detach(activePlayer)
+        activePlayer = player
+        mediaSession = MediaSession.Builder(activity, player).build()
+        notificationManager.setPlayer(player)
+    }
+    fun detach(player: Player?) {
+        if (player == null || activePlayer !== player) return
+        notificationManager.setPlayer(null)
+        mediaSession?.release()
+        mediaSession = null
+        activePlayer = null
+    }
+    fun release() {
+        notificationManager.setPlayer(null)
+        mediaSession?.release()
+        mediaSession = null
+        activePlayer = null
+    }
+}
 
 
 private const val SUBTITLE_PREFERENCES = "subtitle_preferences"
@@ -1194,13 +1276,31 @@ private fun parseIptvPlaylist(contents: String): List<IptvChannel> {
 
 private fun buildIptvMediaItem(channel: IptvChannel): MediaItem {
     val lowerUrl = channel.streamUrl.lowercase()
-    val builder = MediaItem.Builder().setUri(channel.streamUrl)
+    val builder = MediaItem.Builder()
+        .setUri(channel.streamUrl)
+        .setMediaMetadata(
+            MediaMetadata.Builder()
+                .setTitle(channel.name)
+                .setArtist(channel.category)
+                .build()
+        )
     when {
         ".m3u8" in lowerUrl -> builder.setMimeType(MimeTypes.APPLICATION_M3U8)
         ".mpd" in lowerUrl -> builder.setMimeType(MimeTypes.APPLICATION_MPD)
     }
     return builder.build()
 }
+
+private fun buildMusicMediaItem(song: KUniverseSong, streamUrl: String): MediaItem =
+    MediaItem.Builder()
+        .setUri(streamUrl)
+        .setMediaMetadata(
+            MediaMetadata.Builder()
+                .setTitle(song.title)
+                .setArtist(song.artist)
+                .build()
+        )
+        .build()
 
 private fun buildMalayalamRadioMediaItem(
     station: MalayalamRadioStation,
@@ -2072,6 +2172,10 @@ class MainActivity : ComponentActivity() {
 
     private var client: Client? = null
 
+    private val mediaNotificationController by lazy {
+        MediaPlaybackNotificationController(this)
+    }
+
     private var stage by mutableStateOf("starting")
     private var message by mutableStateOf("")
     private var myUserId by mutableStateOf<Long?>(null)
@@ -2128,6 +2232,16 @@ class MainActivity : ComponentActivity() {
         startTelegram()
         initTorrentStream()
 
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
+                PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(
+                arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
+                7002
+            )
+        }
+
         WindowCompat.setDecorFitsSystemWindows(window, true)
         window.statusBarColor = android.graphics.Color.rgb(5, 6, 11)
         window.navigationBarColor = android.graphics.Color.rgb(5, 6, 11)
@@ -2149,6 +2263,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+
+    override fun onDestroy() {
+        mediaNotificationController.release()
+        super.onDestroy()
+    }
 
     private fun initTorrentStream() {
         if (torrentStream != null) return
@@ -2839,19 +2958,29 @@ class MainActivity : ComponentActivity() {
         }
 
         val player = remember(item.fileId, item.localPath, item.torrent) {
-            val torrent = item.torrent
+
+        val videoMetadata = MediaMetadata.Builder()
+            .setTitle(item.title)
+            .setArtist(item.info)
+            .build()
+        fun videoMediaItem(uri: Uri): MediaItem = MediaItem.Builder()
+            .setUri(uri)
+            .setMediaMetadata(videoMetadata)
+            .build()
+
+           val torrent = item.torrent
             val source = if (torrent != null) {
                 val factory = DataSource.Factory {
                     TorrentDataSource(torrent, item.size)
                 }
                 val uri = Uri.fromFile(File(item.localPath ?: torrent.videoFile.absolutePath))
                 ProgressiveMediaSource.Factory(factory)
-                    .createMediaSource(MediaItem.fromUri(uri))
+                    .createMediaSource(videoMediaItem(uri))
             } else if (item.localPath != null) {
                 ProgressiveMediaSource.Factory(
                     DefaultDataSource.Factory(context)
                 ).createMediaSource(
-                    MediaItem.fromUri(Uri.fromFile(File(item.localPath)))
+                    videoMediaItem(Uri.fromFile(File(item.localPath)))
                 )
             } else {
                 val factory = DataSource.Factory {
@@ -2873,7 +3002,7 @@ class MainActivity : ComponentActivity() {
 
                 ProgressiveMediaSource.Factory(factory)
                     .createMediaSource(
-                        MediaItem.fromUri(uri)
+                        videoMediaItem(uri)
                     )
             }
 
@@ -3045,7 +3174,9 @@ class MainActivity : ComponentActivity() {
         }
 
         DisposableEffect(player) {
+            mediaNotificationController.attach(player)
             onDispose {
+                mediaNotificationController.detach(player)
                 player.release()
                 if (item.localPath != null && !torrentDownloadMode) {
                     stopTorrent()
@@ -3678,6 +3809,7 @@ class MainActivity : ComponentActivity() {
         }
 
         DisposableEffect(player) {
+            mediaNotificationController.attach(player)
             val listener = object : Player.Listener {
                 override fun onIsPlayingChanged(playing: Boolean) {
                     isPlaying = playing
@@ -3700,6 +3832,7 @@ class MainActivity : ComponentActivity() {
             player.addListener(listener)
             onDispose {
                 player.removeListener(listener)
+                mediaNotificationController.detach(player)
                 player.release()
             }
         }
@@ -4034,7 +4167,9 @@ class MainActivity : ComponentActivity() {
         }
 
         DisposableEffect(player) {
-            onDispose { player.release() }
+            mediaNotificationController.attach(player)
+            onDispose { mediaNotificationController.detach(player)
+                player.release() }
         }
 
         DisposableEffect(Unit) {
@@ -4235,6 +4370,7 @@ class MainActivity : ComponentActivity() {
           var playNextRelatedSong: () -> Unit = {}
 
           DisposableEffect(musicPlayer) {
+              mediaNotificationController.attach(musicPlayer)
               val listener = object : Player.Listener {
                   override fun onIsPlayingChanged(playing: Boolean) { isPlaying = playing }
                   override fun onPlaybackStateChanged(state: Int) {
@@ -4257,7 +4393,7 @@ class MainActivity : ComponentActivity() {
                           isLoadingSong = true
                           playbackError = "Trying another audio quality…"
                           musicPlayer.setMediaItem(
-                              MediaItem.fromUri(qualityFallbackUrls[qualityFallbackIndex])
+                              buildMusicMediaItem(selectedSong, qualityFallbackUrls[qualityFallbackIndex])
                           )
                           musicPlayer.prepare()
                           musicPlayer.playWhenReady = true
@@ -4271,6 +4407,7 @@ class MainActivity : ComponentActivity() {
               musicPlayer.addListener(listener)
               onDispose {
                   musicPlayer.removeListener(listener)
+                  mediaNotificationController.detach(musicPlayer)
                   musicPlayer.release()
               }
           }
@@ -4402,7 +4539,7 @@ class MainActivity : ComponentActivity() {
                    )
                    qualityFallbackUrls = resolved.streamUrls
                    qualityFallbackIndex = 0
-                   musicPlayer.setMediaItem(MediaItem.fromUri(resolved.streamUrls.first()))
+                   musicPlayer.setMediaItem(buildMusicMediaItem(selectedSong, resolved.streamUrls.first()))
                    musicPlayer.prepare()
                    musicPlayer.playWhenReady = true
                }
