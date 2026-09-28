@@ -913,18 +913,18 @@ private val malayalamRadioStations = listOf(
         pageUrl = "https://radiosindia.com/radiomango.html"
     ),
     MalayalamRadioStation(
-        name = "Radio Suno",
-        frequency = "91.7 FM",
-        imageUrl = "https://radiosindia.com/images/radiosuno.jpg",
-        streamUrls = listOf("https://playerservices.streamtheworld.com/api/livestream-redirect/SUNO917_SC"),
-        pageUrl = "https://radiosindia.com/radiosunomalayalam.html"
-    ),
-    MalayalamRadioStation(
         name = "Home FM",
         frequency = "Online radio",
         imageUrl = "https://radiosindia.com/images/homefm.jpg",
         streamUrls = listOf("https://centova.aarenworld.com/proxy/922radiokhushi/stream"),
         pageUrl = "https://radiosindia.com/homefm.html"
+    ),
+    MalayalamRadioStation(
+        name = "Radio Suno",
+        frequency = "91.7 FM",
+        imageUrl = "https://radiosindia.com/images/radiosuno.jpg",
+        streamUrls = listOf("https://playerservices.streamtheworld.com/api/livestream-redirect/SUNO917_SC"),
+        pageUrl = "https://radiosindia.com/radiosunomalayalam.html"
     )
 )
 
@@ -1020,6 +1020,7 @@ private fun directoryMalayalamRadioStation(
 )
 
 private val malayalamRadioImageOverrides = mapOf(
+    "radiolemonlive.html" to "https://onlineradiofm.in/assets/image/radio/180/lemon-live.jpg",
     "radiosunobahrain.html" to "images/radiosunobh.jpg",
     "986malayalamradio.html" to "images/986malayalamradio.jpg",
     "ananthapurifm.html" to "images/air.jpg",
@@ -3779,8 +3780,9 @@ class MainActivity : ComponentActivity() {
         }
 
         LaunchedEffect(Unit) {
-            val discoveredStations = loadMalayalamRadioDirectory()
-            stations = (malayalamRadioStations + discoveredStations + malayalamRadioDirectoryFallback)
+            // Use the curated Malayalam catalog only. Scraping the directory at runtime
+            // can pair malformed HTML cards with the wrong station artwork.
+            stations = (malayalamRadioStations + malayalamRadioDirectoryFallback)
                 .filter { station ->
                     station.pageUrl?.let(::isMalayalamRadioStationPageUrl) ?: false
                 }
