@@ -828,6 +828,19 @@ private fun isMalayalamRadioPageUrl(rawUrl: String): Boolean {
         path.endsWith(".php", ignoreCase = true)
 }
 
+private val malayalamRadioNonStationMarkers = setOf(
+    "hindi", "tamil", "kannada", "punjabi", "telugu", "bengali", "marathi", "gujarati", "english"
+)
+
+private fun isMalayalamRadioStationPageUrl(rawUrl: String): Boolean {
+    val uri = runCatching { Uri.parse(rawUrl) }.getOrNull() ?: return false
+    if (!isMalayalamRadioPageUrl(rawUrl)) return false
+
+    val pageName = uri.lastPathSegment?.lowercase().orEmpty()
+    if (pageName.isBlank() || pageName == "index.html" || pageName == "malayalamradio.html") return false
+    return malayalamRadioNonStationMarkers.none { marker -> pageName.contains(marker) }
+}
+
 private fun isMalayalamRadioStreamUrl(rawUrl: String): Boolean {
     val uri = runCatching { Uri.parse(rawUrl) }.getOrNull() ?: return false
     if (!uri.scheme.equals("http", ignoreCase = true) &&
@@ -1089,25 +1102,26 @@ private suspend fun loadMalayalamRadioDirectory(): List<MalayalamRadioStation> =
             if (connection.responseCode !in 200..299) return@withContext emptyList()
 
             val html = connection.inputStream.bufferedReader().use { it.readText() }
-            // Read each station card as one unit. The directory contains a few
-            // malformed anchors without a closing </a>; matching anchors globally
-            // can then pair one station's link with the next station's image/name.
+            // Keep each station card together. The source page has nested divs and
+            // a few malformed anchors; stopping at the first </div> can otherwise
+            // pair one station's link with the next station's name or artwork.
             val stationCardPattern = Regex(
-                """<div\b[^>]*class\s*=\s*["'][^"']*grid_1_of_2[^"']*["'][^>]*>([\s\S]*?)</div>""",
+                """<div\b[^>]*class\s*=\s*[\"'][^\"']*grid_1_of_2[^\"']*[\"'][^>]*>([\s\S]*?)(?=<div\b[^>]*class\s*=\s*[\"'][^\"']*grid_1_of_2[^\"']*[\"']|$)"""
                 RegexOption.IGNORE_CASE
             )
             val stationLinkPattern = Regex(
-                """<a\b[^>]*href\s*=\s*["']([^"']+\.html?)["']""",
+                """<a\b[^>]*href\s*=\s*[\"']([^\"']+\.(?:html?|php)(?:\?[^\"']*)?)[\"']"""
                 RegexOption.IGNORE_CASE
             )
             val stationNamePattern = Regex(
-                """<p\b[^>]*>([\s\S]*?)</p>""",
+                """<p\b[^>]*>([\s\S]*?)</p>"""
                 RegexOption.IGNORE_CASE
             )
             val stationImagePattern = Regex(
-                """<img\b[^>]*(?:src|data-src|data-lazy-src)\s*=\s*["']([^"']+)["']""",
+                """<img\b[^>]*(?:src|data-src|data-lazy-src|data-original)\s*=\s*[\"']([^\"']+)[\"']"""
                 RegexOption.IGNORE_CASE
             )
+            
             val seenUrls = malayalamRadioStations
                 .mapNotNull { it.pageUrl }
                 .toMutableSet()
@@ -1135,7 +1149,7 @@ private suspend fun loadMalayalamRadioDirectory(): List<MalayalamRadioStation> =
                     name.isBlank() ||
                     lowerName in malayalamRadioNavigationNames ||
                     lowerName in malayalamRadioIgnoredNames ||
-                    pageUrl == MALAYALAM_RADIO_URL ||
+                    !isMalayalamRadioStationPageUrl(pageUrl) ||
                     !seenUrls.add(pageUrl)
                 ) {
                     null
@@ -3745,6 +3759,13 @@ class MainActivity : ComponentActivity() {
                 favoriteKeys + key
             }
             favoritePreferences.edit().putStringSet("station_keys", favoriteKeys).apply()
+
+        fun openStationPage(station: MalayalamRadioStation) {
+            val pageUrl = station.pageUrl ?: return
+            runCatching {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(pageUrl)))
+            }
+        }
         }
 
         val normalizedSearchQuery = searchQuery.trim().lowercase()
@@ -3759,9 +3780,11 @@ class MainActivity : ComponentActivity() {
 
         LaunchedEffect(Unit) {
             val discoveredStations = loadMalayalamRadioDirectory()
-            stations = malayalamRadioStations +
-                (discoveredStations + malayalamRadioDirectoryFallback)
-                    .distinctBy { it.pageUrl ?: it.name }
+            stations = (malayalamRadioStations + discoveredStations + malayalamRadioDirectoryFallback)
+                .filter { station ->
+                    station.pageUrl?.let(::isMalayalamRadioStationPageUrl) ?: false
+                }
+                .distinctBy { it.pageUrl ?: it.name }
             directoryLoading = false
         }
 
@@ -3979,6 +4002,7 @@ class MainActivity : ComponentActivity() {
                         isFavorite = favoriteKeys.contains(malayalamRadioFavoriteKey(station)),
                         onPlayPause = { startStation(station) },
                         onToggleFavorite = { toggleFavorite(station) }
+                        onOpenPage = { openStationPage(station) }
                     )
                 }
             }
@@ -3993,37 +4017,53 @@ class MainActivity : ComponentActivity() {
         isLoading: Boolean,
         isFavorite: Boolean,
         onPlayPause: () -> Unit,
-        onToggleFavorite: () -> Unit
+        onToggleFavorite: () -> Unit,
+        onOpenPage: () -> Unit
     ) {
         Card(modifier = Modifier.fillMaxWidth()) {
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(12.dp)
             ) {
-                AsyncImage(
-                    model = station.imageUrl,
-                    contentDescription = station.name,
-                    placeholder = painterResource(id = R.drawable.ktele_player_logo),
-                    error = painterResource(id = R.drawable.ktele_player_logo),
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .size(width = 112.dp, height = 78.dp)
-                        .background(Color(0xFF20242D), RoundedCornerShape(10.dp))
-                )
-                Spacer(modifier = Modifier.size(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(station.name, style = MaterialTheme.typography.titleMedium)
-                    Text(station.frequency, color = Color(0xFFB9C2D0))
-                    if (isCurrent && isPlaying) {
-                        Text("Playing now", color = Color(0xFF55E39B), style = MaterialTheme.typography.bodySmall)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    AsyncImage(
+                        model = station.imageUrl,
+                        contentDescription = "${station.name} radio station image",
+                        placeholder = painterResource(id = R.drawable.ktele_player_logo),
+                        error = painterResource(id = R.drawable.ktele_player_logo),
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .size(width = 128.dp, height = 92.dp)
+                            .background(Color(0xFF20242D), RoundedCornerShape(10.dp))
+                    )
+                    Spacer(modifier = Modifier.size(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(station.name, style = MaterialTheme.typography.titleMedium)
+                        Text(station.frequency, color = Color(0xFFB9C2D0))
+                        if (isCurrent && isPlaying) {
+                            Text("Playing now", color = Color(0xFF55E39B), style = MaterialTheme.typography.bodySmall)
+                        }
                     }
                 }
-                Column(horizontalAlignment = Alignment.End) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(
+                        onClick = onOpenPage,
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
+                    ) {
+                        Text("Open station")
+                    }
                     TextButton(
                         onClick = onToggleFavorite,
-                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
                     ) {
                         Text(
                             if (isFavorite) "★ Favorite" else "☆ Favorite",
