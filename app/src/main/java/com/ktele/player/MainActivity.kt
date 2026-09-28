@@ -294,31 +294,52 @@ private fun resolveMusicTrack(song: KUniverseSong): ResolvedMusicTrack? {
         }
     }
 
-    var songId = song.sourceId
-    if (songId.isNullOrBlank()) {
-        val query = Uri.encode(song.searchQuery + " " + song.artist)
-        val searchJson = requestJson(MUSIC_API_BASE_URL + "/search?query=" + query) ?: return null
-        val results = searchJson.optJSONObject("data")?.optJSONObject("songs")?.optJSONArray("results")
-            ?: return null
-        if (results.length() == 0) return null
-        var match = results.optJSONObject(0) ?: return null
-        for (index in 0 until results.length()) {
-            val candidate = results.optJSONObject(index) ?: continue
-            val candidateTitle = candidate.optString("title")
-            if (
-                candidateTitle.equals(song.searchQuery, ignoreCase = true) ||
-                candidateTitle.contains(song.searchQuery, ignoreCase = true)
-            ) {
-                match = candidate
-                break
+    fun findSongId(): String? {
+        val searchTerms = listOf(
+            song.searchQuery.trim(),
+            "${song.searchQuery} ${song.artist}".trim()
+        ).filter { it.isNotBlank() }.distinct()
+
+        for (searchTerm in searchTerms) {
+            val query = Uri.encode(searchTerm)
+            val searchJson = requestJson(MUSIC_API_BASE_URL + "/search?query=" + query) ?: continue
+            val results = searchJson.optJSONObject("data")?.optJSONObject("songs")?.optJSONArray("results")
+                ?: continue
+            if (results.length() == 0) continue
+
+            var match: JSONObject? = null
+            for (index in 0 until results.length()) {
+                val candidate = results.optJSONObject(index) ?: continue
+                val candidateTitle = candidate.optString("title").trim()
+                if (
+                    candidateTitle.equals(song.searchQuery, ignoreCase = true) ||
+                    candidateTitle.contains(song.searchQuery, ignoreCase = true)
+                ) {
+                    match = candidate
+                    break
+                }
             }
+            val selected = match ?: results.optJSONObject(0)
+            val id = selected?.optString("id")?.trim().orEmpty()
+            if (id.isNotBlank()) return id
         }
-        songId = match.optString("id").takeIf { it.isNotBlank() }
+        return null
     }
-    val detailJson = songId?.let {
+
+    // Only a song result carries a song id. Album/playlist/artist ids belong to
+    // different API resources, so resolve those rows through a song search.
+    var songId = song.sourceId?.takeIf { song.resultType == "song" }
+    var detailJson = songId?.let {
         requestJson(MUSIC_API_BASE_URL + "/songs/" + Uri.encode(it))
-    } ?: return null
-    val data = detailJson.opt("data")
+    }
+    if (detailJson == null) {
+        songId = findSongId()
+        detailJson = songId?.let {
+            requestJson(MUSIC_API_BASE_URL + "/songs/" + Uri.encode(it))
+        }
+    }
+    val playableDetailJson = detailJson ?: return null
+    val data = playableDetailJson.opt("data")
     val track = when (data) {
         is org.json.JSONArray -> data.optJSONObject(0)
         is JSONObject -> data
@@ -4724,24 +4745,15 @@ class MainActivity : ComponentActivity() {
                                    modifier = Modifier.fillMaxWidth().weight(1f),
                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)
                                ) {
-                                   items(browseSearchResults) { song ->
-                                       Row(
-                                           modifier = Modifier
-                                               .fillMaxWidth()
-                                               .then(
-                                                    if (song.resultType == "song") {
-                                                        Modifier.then(
-                                                    if (song.resultType == "song") {
-                                                        Modifier.clickable { openSong(song) }
-                                                    } else {
-                                                        Modifier
-                                                    }
-                                                )
-                                                    } else {
-                                                        Modifier
-                                                    }
-                                                )
-                                               .padding(vertical = 8.dp),
+                                    items(
+                                        browseSearchResults,
+                                        key = { musicSongKey(it) }
+                                    ) { song ->
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable { openSong(song) }
+                                                .padding(vertical = 8.dp),
                                            verticalAlignment = Alignment.CenterVertically
                                        ) {
                                            song.imageUrl?.let { imageUrl ->
