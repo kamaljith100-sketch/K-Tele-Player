@@ -5290,18 +5290,26 @@ class MainActivity : ComponentActivity() {
                                        webViewClient = object : WebViewClient() {
                                            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                                                val url = request.url.toString()
-                                               if (isBlockedAdRequest(url)) return true
+                                               if (!isAutoEmbedUrl(view.url?.toString().orEmpty()) &&
+                                                   !isAutoEmbedUrl(url) &&
+                                                   isBlockedAdRequest(url)) return true
                                                val scheme = request.url.scheme.orEmpty().lowercase()
                                                return scheme != "http" && scheme != "https"
                                            }
                                            @Suppress("DEPRECATION")
                                            override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
-                                               if (isBlockedAdRequest(url)) return true
+                                               if (!isAutoEmbedUrl(view.url?.toString().orEmpty()) &&
+                                                   !isAutoEmbedUrl(url) &&
+                                                   isBlockedAdRequest(url)) return true
                                                val scheme = Uri.parse(url).scheme.orEmpty().lowercase()
                                                return scheme != "http" && scheme != "https"
                                            }
                                            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
-                                               if (isBlockedAdRequest(request.url.toString())) return WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(ByteArray(0)))
+                                               if (!isAutoEmbedUrl(view.url?.toString().orEmpty()) &&
+                                                    !isAutoEmbedUrl(request.url.toString()) &&
+                                                    isBlockedAdRequest(request.url.toString())) {
+                                                    return WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(ByteArray(0)))
+                                                }
                                                return super.shouldInterceptRequest(view, request)
                                            }
                                            @Suppress("DEPRECATION")
@@ -6056,6 +6064,9 @@ class MainActivity : ComponentActivity() {
                                 if (!isAutoEmbedUrl(url)) {
                                                     view.evaluateJavascript(AD_CLEANUP_HOOK, null)
                                                 }
+                                if (isAutoEmbedUrl(url)) {
+                                    view.evaluateJavascript(AUTOEMBED_START_WATCHING_HOOK, null)
+                                }
                                 if (radioOnlyMode) {
                                     view.evaluateJavascript("document.querySelectorAll('audio,video').forEach(function(media){ media.autoplay = true; });", null)
                                 }
