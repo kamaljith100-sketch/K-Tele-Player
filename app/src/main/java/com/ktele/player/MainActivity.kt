@@ -5306,11 +5306,15 @@ class MainActivity : ComponentActivity() {
                                            }
                                            @Suppress("DEPRECATION")
                                            override fun shouldInterceptRequest(view: WebView, url: String): WebResourceResponse? {
-                                               if (isBlockedAdRequest(url)) return WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(ByteArray(0)))
+                                               if (!isAutoEmbedUrl(view.url?.toString().orEmpty()) &&
+                                                !isAutoEmbedUrl(url) &&
+                                                isBlockedAdRequest(url)) return WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(ByteArray(0)))
                                                return super.shouldInterceptRequest(view, url)
                                            }
                                            override fun onPageFinished(view: WebView, url: String) {
-                                               view.evaluateJavascript(AD_CLEANUP_HOOK, null)
+                                               if (!isAutoEmbedUrl(url)) {
+                                                    view.evaluateJavascript(AD_CLEANUP_HOOK, null)
+                                                }
                                  if (isAutoEmbedUrl(url)) {
                                      view.evaluateJavascript(AUTOEMBED_START_WATCHING_HOOK, null)
                                  }
@@ -6011,7 +6015,9 @@ class MainActivity : ComponentActivity() {
                                 request: WebResourceRequest
                             ): WebResourceResponse? {
                                 val url = request.url.toString()
-                                if (isBlockedAdRequest(url)) {
+                                if (!isAutoEmbedUrl(view.url?.toString().orEmpty()) &&
+                                    !isAutoEmbedUrl(url) &&
+                                    isBlockedAdRequest(url)) {
                                     return WebResourceResponse(
                                         "text/plain",
                                         "UTF-8",
@@ -6029,7 +6035,9 @@ class MainActivity : ComponentActivity() {
                                 view: WebView,
                                 url: String
                             ): WebResourceResponse? {
-                                if (isBlockedAdRequest(url)) {
+                                if (!isAutoEmbedUrl(view.url?.toString().orEmpty()) &&
+                                    !isAutoEmbedUrl(url) &&
+                                    isBlockedAdRequest(url)) {
                                     return WebResourceResponse(
                                         "text/plain",
                                         "UTF-8",
@@ -6045,7 +6053,9 @@ class MainActivity : ComponentActivity() {
                             ) {
                                 urlText = url
                                 view.evaluateJavascript(TORRENT_LINK_HOOK, null)
-                                view.evaluateJavascript(AD_CLEANUP_HOOK, null)
+                                if (!isAutoEmbedUrl(url)) {
+                                                    view.evaluateJavascript(AD_CLEANUP_HOOK, null)
+                                                }
                                 if (radioOnlyMode) {
                                     view.evaluateJavascript("document.querySelectorAll('audio,video').forEach(function(media){ media.autoplay = true; });", null)
                                 }
