@@ -2173,6 +2173,63 @@ private const val MUSIC_BRANDING_HOOK = """
 })();
 """
 
+    private const val K_UNIVERSE_BRANDING_HOOK = """
+    (function() {
+      if (window.__kteleKUniverseBrandingInstalled) return;
+      window.__kteleKUniverseBrandingInstalled = true;
+
+      var logoUrl = 'file:///android_res/drawable/k_universe_emblem.png';
+      var brandPattern = /k[-\s]?universe/i;
+
+      function addEmblem(element) {
+          if (!element || element.nodeType !== 1) return;
+          if (/^(SCRIPT|STYLE|NOSCRIPT|SVG)$/.test(element.tagName)) return;
+          if (element.querySelector && element.querySelector('img[data-k-universe-emblem="true"]')) return;
+          var image = document.createElement('img');
+          image.src = logoUrl;
+          image.alt = '';
+          image.setAttribute('aria-hidden', 'true');
+          image.setAttribute('data-k-universe-emblem', 'true');
+          image.style.cssText = 'width:30px;height:30px;object-fit:contain;display:inline-block;vertical-align:middle;flex:none;margin-right:7px;border-radius:5px;';
+          element.insertBefore(image, element.firstChild);
+      }
+
+      function applyBranding(root) {
+          if (!root || !root.ownerDocument) return;
+          var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+          var node;
+          var parents = [];
+          while ((node = walker.nextNode())) {
+              if (!node.nodeValue || !brandPattern.test(node.nodeValue)) continue;
+              if (node.parentElement) parents.push(node.parentElement);
+          }
+          parents.forEach(addEmblem);
+          document.querySelectorAll('[alt], [title], [aria-label]').forEach(function(element) {
+              var value = [element.getAttribute('alt'), element.getAttribute('title'), element.getAttribute('aria-label')].join(' ');
+              if (brandPattern.test(value) && element.parentElement) addEmblem(element.parentElement);
+          });
+      }
+
+      function install() {
+          applyBranding(document.documentElement);
+          if (!document.head || document.getElementById('__kteleKUniverseBrandStyle')) return;
+          var style = document.createElement('style');
+          style.id = '__kteleKUniverseBrandStyle';
+          style.textContent = '[data-k-universe-emblem="true"]{object-fit:contain!important;}';
+          document.head.appendChild(style);
+      }
+
+      install();
+      new MutationObserver(function(records) {
+          records.forEach(function(record) {
+              record.addedNodes.forEach(function(node) {
+                  if (node.nodeType === 1) applyBranding(node);
+              });
+          });
+      }).observe(document.documentElement, { childList: true, subtree: true });
+    })();
+    """
+    
 @Composable
 private fun AppLogo(
     modifier: Modifier = Modifier.size(96.dp)
@@ -5325,6 +5382,7 @@ class MainActivity : ComponentActivity() {
                                                 }
                                  if (isAutoEmbedUrl(url)) {
                                      view.evaluateJavascript(AUTOEMBED_START_WATCHING_HOOK, null)
+                                      view.evaluateJavascript(K_UNIVERSE_BRANDING_HOOK, null)
                                  }
                                  view.evaluateJavascript("(function(){ if (window.__kteleWindowOpenHook) return; window.__kteleWindowOpenHook = true; window.open = function(url){ if (url) window.location.href = url; return window; }; })();", null)
                                                view.evaluateJavascript(MUSIC_BRANDING_HOOK, null)
@@ -6066,6 +6124,7 @@ class MainActivity : ComponentActivity() {
                                                 }
                                 if (isAutoEmbedUrl(url)) {
                                     view.evaluateJavascript(AUTOEMBED_START_WATCHING_HOOK, null)
+                                      view.evaluateJavascript(K_UNIVERSE_BRANDING_HOOK, null)
                                 }
                                 if (radioOnlyMode) {
                                     view.evaluateJavascript("document.querySelectorAll('audio,video').forEach(function(media){ media.autoplay = true; });", null)
