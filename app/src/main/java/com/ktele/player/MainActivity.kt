@@ -2333,6 +2333,7 @@ class MainActivity : ComponentActivity() {
     private var homeOpen by mutableStateOf(false)
     private var menuOpen by mutableStateOf(true)
     private var mediaHubOpen by mutableStateOf(false)
+    private var torrentHubOpen by mutableStateOf(false)
     private var telegramLoginOpen by mutableStateOf(false)
     private var iptvPlaylistUrl by mutableStateOf(DEFAULT_IPTV_PLAYLIST_URL)
     private var iptvChannels by mutableStateOf<List<IptvChannel>>(emptyList())
@@ -2979,6 +2980,14 @@ class MainActivity : ComponentActivity() {
             homeOpen -> HomeScreen()
             menuOpen -> MainMenuScreen()
             mediaHubOpen -> MediaHubScreen()
+            torrentHubOpen -> {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    KtorrScreen()
+                    if (torrentSourceUrl != null) {
+                        TorrentSourceDialog()
+                    }
+                }
+            }
             musicBrowserOpen -> MusicBrowserScreen()
             malayalamRadioOpen -> MalayalamRadioScreen()
             telegramLoginOpen -> TelegramLoginScreen()
@@ -5751,6 +5760,27 @@ class MainActivity : ComponentActivity() {
 
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(ui.cardPadding)) {
+                    Text("K-torr", style = MaterialTheme.typography.titleLarge)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        "Open a magnet link or .torrent URL with the built-in player.",
+                        color = Color(0xFFB9C2D0)
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Button(
+                        onClick = {
+                            mediaHubOpen = false
+                            torrentHubOpen = true
+                        }
+                    ) {
+                        Text("Open K-torr")
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(ui.cardPadding)) {
                     Text("Torrent Video Browser", style = MaterialTheme.typography.titleLarge)
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
@@ -5766,6 +5796,83 @@ class MainActivity : ComponentActivity() {
                         }
                     ) {
                         Text("Torrent Video Browser")
+                    }
+                }
+            }
+        }
+    }
+
+    @Composable
+    private fun KtorrScreen() {
+        val ui = rememberUiMetrics()
+        var sourceInput by remember { mutableStateOf("") }
+        var inputError by remember { mutableStateOf("") }
+
+        BackHandler(enabled = torrentSourceUrl == null) {
+            torrentHubOpen = false
+            mediaHubOpen = true
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(ui.screenPadding),
+            verticalArrangement = Arrangement.Top
+        ) {
+            AdaptiveLogo(Modifier.align(Alignment.CenterHorizontally))
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column {
+                    Text("K-torr", style = MaterialTheme.typography.headlineMedium)
+                    Text("Play a magnet link or .torrent URL", color = Color(0xFFB9C2D0))
+                }
+                TextButton(onClick = {
+                    torrentHubOpen = false
+                    mediaHubOpen = true
+                }) {
+                    Text("Back")
+                }
+            }
+            Spacer(modifier = Modifier.height(24.dp))
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(ui.cardPadding)) {
+                    Text("Add a source", style = MaterialTheme.typography.titleLarge)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "Enter a magnet link or direct .torrent URL that you have permission to access.",
+                        color = Color(0xFFB9C2D0)
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+                    OutlinedTextField(
+                        value = sourceInput,
+                        onValueChange = { sourceInput = it; inputError = "" },
+                        label = { Text("Magnet link or .torrent URL") },
+                        modifier = Modifier.fillMaxWidth(),
+                        maxLines = 4
+                    )
+                    if (inputError.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(inputError, color = Color(0xFFFF6B84))
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(
+                        onClick = {
+                            val source = normalizeTorrentSource(sourceInput)
+                            if (source == null) {
+                                inputError = "Enter a valid magnet link or .torrent URL."
+                            } else {
+                                inputError = ""
+                                showTorrentSource(source, assumeTorrent = true)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Continue")
                     }
                 }
             }
