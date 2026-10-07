@@ -4444,26 +4444,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun openInAppBrowser(url: String, radioOnly: Boolean = false) {
-        selectedBrowserUrl = url
-        radioOnlyMode = radioOnly
-        homeOpen = false
-        menuOpen = false
-        mediaHubOpen = false
-        settingsOpen = false
-        iptvOpen = false
-        browserOpen = true
-    }
-
-    private fun openMusicInAppBrowser() {
-        homeOpen = false
-        menuOpen = false
-        mediaHubOpen = false
-        settingsOpen = false
-        iptvOpen = false
-        browserOpen = false
-        musicBrowserOpen = true
-    }
+    private fun clearPrimaryScreenRoutes() {,        homeOpen = false,        menuOpen = false,        mediaHubOpen = false,        torrentHubOpen = false,        musicBrowserOpen = false,        malayalamRadioOpen = false,        telegramLoginOpen = false,        browserOpen = false,        settingsOpen = false,        iptvOpen = false,    },,    private fun openInAppBrowser(url: String, radioOnly: Boolean = false) {,        clearPrimaryScreenRoutes(),        selectedBrowserUrl = url,        radioOnlyMode = radioOnly,        browserOpen = true,    },,    private fun openBrowserHome() {,        clearPrimaryScreenRoutes(),        selectedBrowserUrl = null,        radioOnlyMode = false,        browserOpen = true,    },,    private fun openMusicInAppBrowser() {,        clearPrimaryScreenRoutes(),        selectedBrowserUrl = null,        radioOnlyMode = false,        musicBrowserOpen = true,    },,    private fun openTorrentHub() {,        clearPrimaryScreenRoutes(),        selectedBrowserUrl = null,        radioOnlyMode = false,        torrentHubOpen = true,    }
 
 
       @Composable
@@ -5673,7 +5654,7 @@ class MainActivity : ComponentActivity() {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            Card(modifier = Modifier.fillMaxWidth()) {
+            Card(modifier = Modifier.fillMaxWidth().clickable { openMusicInAppBrowser() }) {
                 Column(modifier = Modifier.padding(ui.cardPadding)) {
                     Text("Music", style = MaterialTheme.typography.titleLarge)
                     Spacer(modifier = Modifier.height(6.dp))
@@ -5700,10 +5681,8 @@ class MainActivity : ComponentActivity() {
                     )
                     Spacer(modifier = Modifier.height(14.dp))
                     ottMovieSources.forEach { source ->
-                        TextButton(
-                            onClick = {
-                                openInAppBrowser(source.url)
-                            },
+                        Button(
+                            onClick = { openInAppBrowser(source.url) },
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(source.name, modifier = Modifier.fillMaxWidth())
@@ -5756,7 +5735,7 @@ class MainActivity : ComponentActivity() {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            Card(modifier = Modifier.fillMaxWidth()) {
+            Card(modifier = Modifier.fillMaxWidth().clickable { openTorrentHub() }) {
                 Column(modifier = Modifier.padding(ui.cardPadding)) {
                     Text("K-torr", style = MaterialTheme.typography.titleLarge)
                     Spacer(modifier = Modifier.height(6.dp))
@@ -5766,10 +5745,7 @@ class MainActivity : ComponentActivity() {
                     )
                     Spacer(modifier = Modifier.height(14.dp))
                     Button(
-                        onClick = {
-                            mediaHubOpen = false
-                            torrentHubOpen = true
-                        }
+                        onClick = { openTorrentHub() }
                     ) {
                         Text("Open K-torr")
                     }
@@ -5777,7 +5753,7 @@ class MainActivity : ComponentActivity() {
             }
 
             Spacer(modifier = Modifier.height(16.dp))
-            Card(modifier = Modifier.fillMaxWidth()) {
+            Card(modifier = Modifier.fillMaxWidth().clickable { openBrowserHome() }) {
                 Column(modifier = Modifier.padding(ui.cardPadding)) {
                     Text("Torrent Video Browser", style = MaterialTheme.typography.titleLarge)
                     Spacer(modifier = Modifier.height(6.dp))
@@ -5787,11 +5763,7 @@ class MainActivity : ComponentActivity() {
                     )
                     Spacer(modifier = Modifier.height(14.dp))
                     Button(
-                        onClick = {
-                            mediaHubOpen = false
-                            selectedBrowserUrl = null
-                            browserOpen = true
-                        }
+                        onClick = { openBrowserHome() }
                     ) {
                         Text("Torrent Video Browser")
                     }
