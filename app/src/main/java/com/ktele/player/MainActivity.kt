@@ -877,7 +877,7 @@ private data class OttMovieSource(
 )
 
 private val ottMovieSources = listOf(
-    OttMovieSource("Server One", "https://watch-v2.autoembed.app/home"),
+    OttMovieSource("Server 1", "https://watch-v2.autoembed.app/home"),
     OttMovieSource("Server 2", "https://netmirror.center/"),
     OttMovieSource("Server 3", "https://cineby.my/movies")
 )
@@ -5702,9 +5702,7 @@ class MainActivity : ComponentActivity() {
                     ottMovieSources.forEach { source ->
                         TextButton(
                             onClick = {
-                                mediaHubOpen = false
-                                selectedBrowserUrl = source.url
-                                browserOpen = true
+                                openInAppBrowser(source.url)
                             },
                             modifier = Modifier.fillMaxWidth()
                         ) {
