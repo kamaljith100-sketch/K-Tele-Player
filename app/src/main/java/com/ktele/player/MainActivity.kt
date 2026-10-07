@@ -4444,7 +4444,46 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun clearPrimaryScreenRoutes() {,        homeOpen = false,        menuOpen = false,        mediaHubOpen = false,        torrentHubOpen = false,        musicBrowserOpen = false,        malayalamRadioOpen = false,        telegramLoginOpen = false,        browserOpen = false,        settingsOpen = false,        iptvOpen = false,    },,    private fun openInAppBrowser(url: String, radioOnly: Boolean = false) {,        clearPrimaryScreenRoutes(),        selectedBrowserUrl = url,        radioOnlyMode = radioOnly,        browserOpen = true,    },,    private fun openBrowserHome() {,        clearPrimaryScreenRoutes(),        selectedBrowserUrl = null,        radioOnlyMode = false,        browserOpen = true,    },,    private fun openMusicInAppBrowser() {,        clearPrimaryScreenRoutes(),        selectedBrowserUrl = null,        radioOnlyMode = false,        musicBrowserOpen = true,    },,    private fun openTorrentHub() {,        clearPrimaryScreenRoutes(),        selectedBrowserUrl = null,        radioOnlyMode = false,        torrentHubOpen = true,    }
+    private fun clearPrimaryScreenRoutes() {
+        homeOpen = false
+        menuOpen = false
+        mediaHubOpen = false
+        torrentHubOpen = false
+        musicBrowserOpen = false
+        malayalamRadioOpen = false
+        telegramLoginOpen = false
+        browserOpen = false
+        settingsOpen = false
+        iptvOpen = false
+    }
+
+    private fun openInAppBrowser(url: String, radioOnly: Boolean = false) {
+        clearPrimaryScreenRoutes()
+        selectedBrowserUrl = url
+        radioOnlyMode = radioOnly
+        browserOpen = true
+    }
+
+    private fun openBrowserHome() {
+        clearPrimaryScreenRoutes()
+        selectedBrowserUrl = null
+        radioOnlyMode = false
+        browserOpen = true
+    }
+
+    private fun openMusicInAppBrowser() {
+        clearPrimaryScreenRoutes()
+        selectedBrowserUrl = null
+        radioOnlyMode = false
+        musicBrowserOpen = true
+    }
+
+    private fun openTorrentHub() {
+        clearPrimaryScreenRoutes()
+        selectedBrowserUrl = null
+        radioOnlyMode = false
+        torrentHubOpen = true
+    }
 
 
       @Composable
