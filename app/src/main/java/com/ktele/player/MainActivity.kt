@@ -877,9 +877,9 @@ private data class OttMovieSource(
 )
 
 private val ottMovieSources = listOf(
-    OttMovieSource("AutoEmbed", "https://watch-v2.autoembed.app/home"),
-    OttMovieSource("NetMirror", "https://netmirror.center/"),
-    OttMovieSource("Cineby Movies", "https://cineby.my/movies")
+    OttMovieSource("Server One", "https://watch-v2.autoembed.app/home"),
+    OttMovieSource("Server 2", "https://netmirror.center/"),
+    OttMovieSource("Server 3", "https://cineby.my/movies")
 )
 
 private data class MalayalamRadioStation(
