@@ -2977,6 +2977,7 @@ class MainActivity : ComponentActivity() {
 
         when {
             currentVideo != null -> PlayerScreen(currentVideo)
+            musicBrowserOpen -> MusicBrowserScreen()
             homeOpen -> HomeScreen()
             menuOpen -> MainMenuScreen()
             mediaHubOpen -> MediaHubScreen()
@@ -2988,7 +2989,6 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-            musicBrowserOpen -> MusicBrowserScreen()
             malayalamRadioOpen -> MalayalamRadioScreen()
             telegramLoginOpen -> TelegramLoginScreen()
             browserOpen -> {
