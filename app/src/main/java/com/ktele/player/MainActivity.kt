@@ -877,7 +877,7 @@ private data class OttMovieSource(
 )
 
 private val ottMovieSources = listOf(
-    OttMovieSource("Server One", "https://watch-v2.autoembed.app/home"),
+    OttMovieSource("Server 1", "https://watch-v2.autoembed.app/home"),
     OttMovieSource("Server 2", "https://netmirror.center/"),
     OttMovieSource("Server 3", "https://cineby.my/movies")
 )
@@ -2977,6 +2977,7 @@ class MainActivity : ComponentActivity() {
 
         when {
             currentVideo != null -> PlayerScreen(currentVideo)
+            musicBrowserOpen -> MusicBrowserScreen()
             homeOpen -> HomeScreen()
             menuOpen -> MainMenuScreen()
             mediaHubOpen -> MediaHubScreen()
@@ -2988,7 +2989,6 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-            musicBrowserOpen -> MusicBrowserScreen()
             malayalamRadioOpen -> MalayalamRadioScreen()
             telegramLoginOpen -> TelegramLoginScreen()
             browserOpen -> {
@@ -4444,25 +4444,45 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun openInAppBrowser(url: String, radioOnly: Boolean = false) {
-        selectedBrowserUrl = url
-        radioOnlyMode = radioOnly
+    private fun clearPrimaryScreenRoutes() {
         homeOpen = false
         menuOpen = false
         mediaHubOpen = false
+        torrentHubOpen = false
+        musicBrowserOpen = false
+        malayalamRadioOpen = false
+        telegramLoginOpen = false
+        browserOpen = false
         settingsOpen = false
         iptvOpen = false
+    }
+
+    private fun openInAppBrowser(url: String, radioOnly: Boolean = false) {
+        clearPrimaryScreenRoutes()
+        selectedBrowserUrl = url
+        radioOnlyMode = radioOnly
+        browserOpen = true
+    }
+
+    private fun openBrowserHome() {
+        clearPrimaryScreenRoutes()
+        selectedBrowserUrl = null
+        radioOnlyMode = false
         browserOpen = true
     }
 
     private fun openMusicInAppBrowser() {
-        homeOpen = false
-        menuOpen = false
-        mediaHubOpen = false
-        settingsOpen = false
-        iptvOpen = false
-        browserOpen = false
+        clearPrimaryScreenRoutes()
+        selectedBrowserUrl = null
+        radioOnlyMode = false
         musicBrowserOpen = true
+    }
+
+    private fun openTorrentHub() {
+        clearPrimaryScreenRoutes()
+        selectedBrowserUrl = null
+        radioOnlyMode = false
+        torrentHubOpen = true
     }
 
 
@@ -5673,7 +5693,7 @@ class MainActivity : ComponentActivity() {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            Card(modifier = Modifier.fillMaxWidth()) {
+            Card(modifier = Modifier.fillMaxWidth().clickable { openMusicInAppBrowser() }) {
                 Column(modifier = Modifier.padding(ui.cardPadding)) {
                     Text("Music", style = MaterialTheme.typography.titleLarge)
                     Spacer(modifier = Modifier.height(6.dp))
@@ -5700,12 +5720,8 @@ class MainActivity : ComponentActivity() {
                     )
                     Spacer(modifier = Modifier.height(14.dp))
                     ottMovieSources.forEach { source ->
-                        TextButton(
-                            onClick = {
-                                mediaHubOpen = false
-                                selectedBrowserUrl = source.url
-                                browserOpen = true
-                            },
+                        Button(
+                            onClick = { openInAppBrowser(source.url) },
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(source.name, modifier = Modifier.fillMaxWidth())
@@ -5758,7 +5774,7 @@ class MainActivity : ComponentActivity() {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            Card(modifier = Modifier.fillMaxWidth()) {
+            Card(modifier = Modifier.fillMaxWidth().clickable { openTorrentHub() }) {
                 Column(modifier = Modifier.padding(ui.cardPadding)) {
                     Text("K-torr", style = MaterialTheme.typography.titleLarge)
                     Spacer(modifier = Modifier.height(6.dp))
@@ -5768,10 +5784,7 @@ class MainActivity : ComponentActivity() {
                     )
                     Spacer(modifier = Modifier.height(14.dp))
                     Button(
-                        onClick = {
-                            mediaHubOpen = false
-                            torrentHubOpen = true
-                        }
+                        onClick = { openTorrentHub() }
                     ) {
                         Text("Open K-torr")
                     }
@@ -5779,7 +5792,7 @@ class MainActivity : ComponentActivity() {
             }
 
             Spacer(modifier = Modifier.height(16.dp))
-            Card(modifier = Modifier.fillMaxWidth()) {
+            Card(modifier = Modifier.fillMaxWidth().clickable { openBrowserHome() }) {
                 Column(modifier = Modifier.padding(ui.cardPadding)) {
                     Text("Torrent Video Browser", style = MaterialTheme.typography.titleLarge)
                     Spacer(modifier = Modifier.height(6.dp))
@@ -5789,11 +5802,7 @@ class MainActivity : ComponentActivity() {
                     )
                     Spacer(modifier = Modifier.height(14.dp))
                     Button(
-                        onClick = {
-                            mediaHubOpen = false
-                            selectedBrowserUrl = null
-                            browserOpen = true
-                        }
+                        onClick = { openBrowserHome() }
                     ) {
                         Text("Torrent Video Browser")
                     }
